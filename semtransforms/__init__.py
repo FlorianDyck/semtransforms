@@ -12,13 +12,8 @@ import _thread
 import itertools
 import multiprocessing
 import os.path
-import re
 import shutil
-import signal
-import sys
 import threading
-
-from tqdm import tqdm
 
 from semtransforms import util
 from semtransforms.framework import Transformer
@@ -27,6 +22,7 @@ from semtransforms.transformation import FindNodes
 # importing subclasses of FindNodes, which are not directly called
 from semtransforms.transformations.strong import *
 from semtransforms.transformations.strong_helper import *
+from semtransforms.transformations.strong_simple import *
 
 
 def _build(*trans: Union[FindNodes, typing.Tuple[FindNodes, object]], number=10):
