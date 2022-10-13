@@ -5,8 +5,13 @@ from typing import List
 def remove_comments(text):
     """
     removes comments from a piece of source code.
+    unchanged from original.
 
-    source: https://stackoverflow.com/questions/241327/remove-c-and-c-comments-using-python
+    source:
+        https://stackoverflow.com/questions/241327/remove-c-and-c-comments-using-python
+    licenses:
+        CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/
+        CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/
     """
     def replacer(match):
         s = match.group(0)
