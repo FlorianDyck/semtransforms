@@ -217,12 +217,15 @@ def __main__(parallel=False):
     input = arg_value(["-f", "--file"], f"{prefix}benchmark/generation/input")
     output = arg_value(["-o", "--out"], f"{prefix}benchmark/generation/output")
     task_name = arg_value(["-t", "--task"], "no_recursion")
+    recursion_limit = arg_value(["-r", "--recurion-limit"], "2000")
     numbers = arg_value(["-n", "--number"], len(task_name.split("\n")) if ":" in task_name else "100")
 
     result = []
     for n in numbers.split(","):
         result += range(*[int(i) for i in n.split(":")]) if ":" in n else [int(n)]
     numbers = result
+
+    sys.setrecursionlimit(recursion_limit)
 
     if task_name == "trace_wrong":
         results = arg_value(["-r", "--results"], r"..\benchmark\benchmark_results\cpa-comp.no_pointers_100_2_missing"
