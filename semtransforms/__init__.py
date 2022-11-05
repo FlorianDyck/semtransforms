@@ -20,9 +20,7 @@ from semtransforms.framework import Transformer
 from semtransforms.pretransformation import support_extensions
 from semtransforms.transformation import FindNodes
 # importing subclasses of FindNodes, which are not directly called
-from semtransforms.transformations.strong import *
-from semtransforms.transformations.strong_helper import *
-from semtransforms.transformations.strong_simple import *
+from semtransforms.transformations import *
 
 
 def _build(*trans: Union[FindNodes, typing.Tuple[FindNodes, object]], number=10):
