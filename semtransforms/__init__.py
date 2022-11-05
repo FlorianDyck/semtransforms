@@ -26,12 +26,12 @@ from semtransforms.transformations import *
 SINGLE_TRANSFORMS = [t for t in FindNodes.all.values() if t not in (add_compound,)]
 
 
-def _build(*trans, number=10):
-    return lambda x, n=number: transform(x, Transformer(*trans), n)
+def _build(*trans, number=(10,)):
+    return lambda x, n=number: transform(x, Transformer(*trans), *n)
 
 
-def _build_except(*trans, number=10):
-    return lambda x, n=number: transform(x, Transformer(*[t for t in SINGLE_TRANSFORMS if t not in trans]), n)
+def _build_except(*trans, number=(10,)):
+    return lambda x, n=number: transform(x, Transformer(*[t for t in SINGLE_TRANSFORMS if t not in trans]), *n)
 
 
 MIXED_TRANSFORMS = {
@@ -62,12 +62,16 @@ def all_transformer():
     return Transformer(*FindNodes.all.values())
 
 
-def transform(program, transformer, number=10):
-    return support_extensions(program, lambda x: on_ast(x, lambda ast: transformer.transform(ast, number)))
+def transform(program, transformer, *number):
+    splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
+    return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: transformer.transform(ast, split)) for split in splits]))
 
 
-def trace(program, trace):
-    return support_extensions(program, lambda x: on_ast(x, lambda ast: _trace(ast, trace)))
+def trace(program, trace, *number):
+    parts = trace.split('\n')
+    splits = [(0, number[0])] + [(number[i], number[i + 1]) for i in range(len(number) - 1)]
+    parts = ['\n'.join(parts[start:end]) for start, end in splits]
+    return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: _trace(ast, part)) for part in parts]))
 
 
 def add_empty_lists(ast: Node):
@@ -108,13 +112,17 @@ def add_necessities(ast: Node):
         add_necessities(c)
 
 
-def on_ast(program, operation):
+def on_ast(program, *operations):
     ast = util.parse(program)
     add_empty_lists(ast)
-    result = operation(ast)
-    add_necessities(ast)
-    decl_first(ast)
-    return util.generate(ast), result
+    results = []
+    for op in operations:
+        result = op(ast)
+        ast_copy = deepcopy(ast)
+        add_necessities(ast_copy)
+        decl_first(ast_copy)
+        results.append((util.generate(ast_copy), result))
+    return results
 
 
 def _trace(ast: Node, run: str):
@@ -124,65 +132,75 @@ def _trace(ast: Node, run: str):
     return run
 
 
-def task(name: str, program: str, number: int, f="/*\n{1}\n*/\n\n{0}"):
+def collect(results, f="/*\n{1}\n*/\n\n{0}"):
+    return [f.format(code, '\n'.join(trace for _, trace in results[:i + 1]))
+            for i, (code, _) in enumerate(results)]
+
+
+def task(name: str, program: str, *number: int, f="/*\n{1}\n*/\n\n{0}"):
     if ":" in name:
-        return f.format(*trace(program, "\n".join((name.split(";") if ";" in name else name.split("\n"))[:number])))
+        return collect(trace(program, name.replace(';', '\n'), *number), f)
     elif name in MIXED_TRANSFORMS:
-        return f.format(*MIXED_TRANSFORMS[name](program, number))
+        return collect(MIXED_TRANSFORMS[name](program, number))
     elif name in FindNodes.all:
-        return f.format(*transform(program, Transformer(*[FindNodes.all[n] for n in name.split(";")]), number))
+        return collect(transform(program, Transformer(*[FindNodes.all[n] for n in name.split(";")]), *number))
 
 
-def trans(file_in, file_out, file_error, task_name, number):
-    with open(file_in, "r") as i, open(file_out, "w+") as o:
+def limit(task, timeout=100):
+    if timeout < 0:
+        return task()
+    timer = threading.Timer(timeout, lambda: _thread.interrupt_main())
+    timer.start()
+    try:
+        result = task()
+        timer.cancel()
+        return result
+    except KeyboardInterrupt:
+        raise Exception('Timeout')
+    finally:
+        timer.cancel()
+
+
+def trans(root, base_len, output, file, task_name, *number, timeout=-1):
+    out = os.path.abspath(output)
+    file_in = os.path.join(root, file)
+    file_out = os.path.join(out, "{}/", os.path.abspath(root)[base_len:], file)
+    with open(file_in, "r") as i:
         code = i.read()
-        if file_in[-2:] in (".c", ".i") and "#include" not in code:
-            timer = threading.Timer(100, lambda: _thread.interrupt_main())
-            timer.start()
-            try:
-                o.write(task(task_name, code, number))
-                timer.cancel()
-            except Exception as e:
-                o.write(f"/*Error parsing file:\n{e}\n*/\n{code}")
-                with open(file_error, "a+") as eo:
-                    eo.write(f"{file_in} -> {file_out}\n{e}\n{'*' * 100}\n")
-            except KeyboardInterrupt:
-                o.write(f"/*Timeout*/\n{code}")
-                with open(file_error, "a+") as eo:
-                    eo.write(f"{file_in} -> {file_out}\nTimeout\n{'*' * 100}\n")
-            finally:
-                timer.cancel()
-        else:
-            o.write(code)
+    if file_in[-2:] not in (".c", ".i") or "#include" in code or "#if" in code:
+        for n in number:
+            with open(file_out.format(n), "w+") as o:
+                o.write(code)
+        return
+    try:
+        result = zip(number, limit(lambda: task(task_name, code, *number), timeout))
+        for n, content in result:
+            with open(file_out.format(n), "w+") as o:
+                o.write(content)
+    except Exception as e:
+        # o.write(f"/*Error parsing file:\n{e}\n*/\n{code}")
+        with open(f"{output}/exceptions.txt", "a+") as eo:
+            eo.write(f"{file_in} -> {os.path.abspath(root)[base_len:]}\\{file}\n{e}\n{'*' * 100}\n")
 
 
 def transform_folder(input, output, task_name, numbers, parallel):
     base_len = len(os.path.abspath(input)) + 1
     out = os.path.abspath(output)
-    pool = multiprocessing.Pool(multiprocessing.cpu_count() - 2)
     print(os.path.abspath(input), os.path.abspath(output), task_name, numbers)
     for root, folder, files in os.walk(input):
-        print(files)
-        if not files:
-            continue
-        print(root)
-        for n in numbers:
-            folder = os.path.join(out, f"{n}/" if len(numbers) > 1 else "", os.path.abspath(root)[base_len:])
-            if not os.path.exists(folder):
-                os.makedirs(folder)
-        if(parallel):
-            pool.starmap(trans, ((
-                os.path.join(root, f),
-                os.path.join(out, f"{n}/" if len(numbers) > 1 else "", os.path.abspath(root)[base_len:], f),
-                f"{output}/exceptions.txt",
-                task_name, n
-            ) for f, n in itertools.product(files, numbers)))
-        else:
-            for f, n in itertools.product(files, numbers):
-                trans(os.path.join(root, f),
-                      os.path.join(out, f"{n}/" if len(numbers) > 1 else "", os.path.abspath(root)[base_len:], f),
-                      f"{output}/exceptions.txt",
-                      task_name, n)
+        if files:
+            for n in numbers:
+                folder = os.path.join(out, f"{n}/", os.path.abspath(root)[base_len:])
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+    if parallel:
+        pool = multiprocessing.Pool(multiprocessing.cpu_count() - 2)
+        pool.starmap(trans, ((root, base_len, output, f, task_name, *numbers)
+                             for root, _, files in os.walk(input) for f in files))
+    else:
+        for root, _, files in os.walk(input):
+            for file in files:
+                trans(root, base_len, output, file, task_name, *numbers)
 
 
 def arg_value(names, default, args=sys.argv):
@@ -253,10 +271,10 @@ def __main__(parallel=False):
                 os.remove(path)
     elif program:
         with open(output, "w") as o:
-            o.write(task(task_name, program, numbers[0]))
+            o.write(task(task_name, program, numbers[0])[0])
     elif os.path.isfile(input):
         with open(input, "r") as i, open(output, "w") as o:
-            o.write(task(task_name, i.read(), numbers[0]))
+            o.write(task(task_name, i.read(), numbers[0])[0])
     else:
         transform_folder(input, output, task_name, numbers, parallel)
 

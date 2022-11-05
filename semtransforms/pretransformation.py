@@ -97,9 +97,13 @@ def support_extensions(code: str, func):
         code = re.sub(f"extern{any}{attr_or_const}{any};", re.sub(attr_or_const, " ", r.group()), code, 1)
 
     # execute func
-    code, trace = func(code)
+    result = func(code)
 
-    # reconstruct incompatible code
-    for pair in replacings:
-        code = re.sub(pair[0], pair[1], code)
-    return code, trace
+    for i in range(len(result)):
+        code, trace = result[i]
+        # reconstruct incompatible code
+        for pattern, replacing in replacings:
+            code = re.sub(pattern, replacing, code)
+        result[i:i+1] = [(code, trace)]
+
+    return result
