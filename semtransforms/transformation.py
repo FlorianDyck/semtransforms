@@ -201,9 +201,6 @@ class FindStatements(FindNodes):
         self.min_length = fnn(min_length, length, 0)
         self.max_length = fnn(max_length, length, 99**99) # inf would be better, but can not be used in range
 
-    def __call__(self, *args, **kwargs):
-        return self.method
-
     def names_if_modifiable(self, parents: List[Node], ast: Node, context: ContextVisitor = None, *names: str):
         """returns transforms on childs if modifiable_length is fullfilled (or not necessary)"""
         if self.modifiable_length and (self.min_length or 0) <= 1 <= (self.max_length or 1):
@@ -213,12 +210,16 @@ class FindStatements(FindNodes):
 
     def _all_transforms(self, ast: Node, parents: List[Node], context: ContextVisitor, child_index: int) -> List:
         """finds statements in a node"""
+        match parents:
+            case [*_, c_ast.Case()]: child_index -= 1
         result = []
-        if parents:
-            match parents[-1]:
-                case c_ast.Case(stmts=all) | c_ast.Default(stmts=all) | c_ast.Compound(block_items=all):
+        match parents:
+            case [*_, c_ast.Case(stmts=all)] | [*_, c_ast.Default(stmts=all)] | [*_, c_ast.Compound(block_items=all)]:
+                if self.min_length >= 0:
                     for end in range(child_index + self.min_length, min(child_index + self.max_length, len(all)) + 1):
                         result += self._transforms(parents, Nodes(all, child_index, end), context)
+                elif child_index == 0:
+                    result += self._transforms(parents, Nodes(all, 0, len(all)), context)
         match ast:
             case c_ast.DoWhile(), c_ast.For(), c_ast.While():
                 return result + self.names_if_modifiable(parents, ast, context, "stmt")

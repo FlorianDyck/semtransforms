@@ -18,12 +18,61 @@ def flip_if(self, parents: List[Node], stmts: Nodes, context: ContextVisitor):
 
 @find_statements(modifiable_length=False)
 def add_compound(self, parents: List[Node], stmts: Content, context: ContextVisitor):
-    def transform():
-        stmts.replace(Compound(stmts.content()))
-
     if isinstance(stmts, Nodes) and stmts.end == len(stmts.nodes) \
             or not any(isinstance(stmt, Decl) for stmt in stmts):
-        return transform
+        return lambda: stmts.replace(Compound(stmts.content()))
+
+
+@find_statements(modifiable_length=False, min_length=-1)
+def fast_compound(self, parents: List[Node], stmts: Content, context: ContextVisitor):
+    if not isinstance(stmts, Nodes):
+        return lambda: stmts.replace(Compound(stmts.content()))
+
+    possibilities = 0  # total number of possibilities
+    streak = 1  # number of sequential non-declaration statements + 1
+    for child in stmts:
+        if isinstance(child, Decl):
+            possibilities += streak * (streak + 1) // 2  # adding the number of possibilities in this block
+            streak = 1  # resetting the number of sequential non-declaration statements
+        else:
+            streak += 1  # increase the number of sequential non-declaration statements
+    possibilities += streak * (streak + 1) // 2  # adding the number of possibilities in the last block
+    # adding the number of possibilities which go to the end and are not covered by the last block
+    possibilities += len(stmts.nodes) + 1 - streak
+
+    def transform(index):
+        start = 0  # start of the current non-declaration sequence
+        streak = 1  # number of sequential non-declaration statements + 1
+        for child in stmts:
+            if isinstance(child, Decl):
+                possibilities = streak * (streak + 1) // 2
+                if index < possibilities:
+                    break  # compound should go in current block
+                start += streak  # this is the start of the next block
+                index -= possibilities  # removing the possibilities of this block
+                streak = 1  # resetting the number of sequential non-declaration statements
+            else:
+                streak += 1  # increase the number of sequential non-declaration statements
+
+        possibilities = streak * (streak + 1) // 2
+        if index < possibilities:
+            # the index is smaller than the number of possibilities in the current block
+            end = start
+            while index > end - start:
+                end += 1
+                index -= end - start
+            start += index
+        else:
+            # the index is bigger than the number of possibilities in the last block
+            # thus, this compound should go to the end and not overlap with a possibility of the last block
+            start = index - possibilities
+            end = len(stmts.nodes)
+        stmts.nodes[start:end] = [Compound(stmts.nodes[start:end])]
+
+    def call_transform(index):  # this is in a function so that the index is not updated
+        return lambda: transform(index)
+
+    return [call_transform(i) for i in range(possibilities)]
 
 
 @find_statements(context=True, length=1)
