@@ -23,19 +23,24 @@ from semtransforms.transformation import FindNodes
 from semtransforms.transformations import *
 
 
-def _build(*trans: Union[FindNodes, typing.Tuple[FindNodes, object]], number=10):
+SINGLE_TRANSFORMS = [t for t in FindNodes.all.values() if t not in (add_compound,)]
+
+
+def _build(*trans, number=10):
     return lambda x, n=number: transform(x, Transformer(*trans), n)
+
+
+def _build_except(*trans, number=10):
+    return lambda x, n=number: transform(x, Transformer(*[t for t in SINGLE_TRANSFORMS if t not in trans]), n)
 
 
 MIXED_TRANSFORMS = {
     "identity": lambda x: (x, ""),
-    "random": _build(*FindNodes.all.values(), number=1),
-    "mixed": _build(*FindNodes.all.values(), number=50),
-    "no_recursion": _build(*[t for t in FindNodes.all.values() if t is not to_recursive], number=50),
-    "no_pointers": _build(*[t for t in FindNodes.all.values() if
-                            t not in (re_ref, re_ref_no_methods, to_method, insert_method, to_recursive)], number=50),
-    "no_fpointers": _build(*[t for t in FindNodes.all.values() if
-                             t not in (re_ref, to_method, insert_method, to_recursive)], number=50),
+    "random": _build_except(number=1),
+    "mixed": _build_except(number=50),
+    "no_recursion": _build_except(to_recursive, number=50),
+    "no_pointers": _build_except(re_ref, re_ref_no_methods, to_method, insert_method, to_recursive, number=50),
+    "no_fpointers": _build_except(re_ref, to_method, insert_method, to_recursive, number=50),
     "arrays": _build(to_array),
     "re_ref": _build(re_ref),
     "loops": _build(deepen_while, for2while, break2goto),
