@@ -103,7 +103,8 @@ def add_necessities(ast: Node):
         case c_ast.Case(stmts=[]) as case:
             case.stmts.append(c_ast.EmptyStatement())
     for c in ast:
-        add_necessities(c)
+        if c:
+            add_necessities(c)
 
 
 class FindNodes:

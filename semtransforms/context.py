@@ -109,14 +109,18 @@ class ContextVisitor:
                 # This is 2 scopes, new Contextlevel have to be temporarily created
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
-                self._build_context(init)
+                if init:
+                    self._build_context(init)
                 i = 0
                 for child in init, cond, next:
-                    self._visit(child, parents, i)
+                    if child:
+                        self._visit(child, parents, i)
                     i += 1
                 self._build_context(stmt)
                 self._visit(stmt, parents, i)
-                del self.levels[-2:]
+                if init:
+                    del self.levels[-1]
+                del self.levels[-1]
             case FuncDef(decl=Decl(name=name, type=type) as decl, body=body):
                 # This a scope with parameters as variables, a new ContextLevel has to be temporarily created
                 self.visit_node(self, current, parents, index)
@@ -167,7 +171,8 @@ class ContextVisitor:
             return
         # run recursively
         for child in current:
-            self._build_context(child, False)
+            if child:
+                self._build_context(child, False)
 
     @cache
     def _build_labels(self, current: Node) -> typing.Dict[str, Node]:
