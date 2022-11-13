@@ -159,8 +159,9 @@ class FindNodes:
             parents = [] + parents + [ast]
             i = 0
             for c in ast:
-                result += self.all_transforms(c, parents, i)
-                i += 1
+                if c:
+                    result += self.all_transforms(c, parents, i)
+                    i += 1
             if ast.__class__ in (c_ast.Compound, c_ast.Case, c_ast.Default):
                 result += self.all_transforms(NoNode(), parents, i)
 
