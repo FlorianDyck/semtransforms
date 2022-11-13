@@ -84,44 +84,13 @@ def add_empty_lists(ast: Node):
         add_empty_lists(c)
 
 
-def must_be_first(ast: Node):
-    match ast:
-        case Typedef():
-            return True
-        case Decl(type=type) if not isinstance(type, FuncDecl):
-            return True
-    return False
-
-
-def decl_first(ast: FileAST):
-    ast.ext = [node for node in ast if must_be_first(node)] + [node for node in ast if not must_be_first(node)]
-
-
-def add_necessities(ast: Node):
-    def to_compound(child):
-        return Compound([child] if child else [])
-    if isinstance(ast, If):
-        if not isinstance(ast.iftrue, Compound):
-            ast.iftrue = to_compound(ast.iftrue)
-        if not isinstance(ast.iffalse, Compound):
-            ast.iffalse = to_compound(ast.iffalse)
-    match ast:
-        case Case(stmts=[]) as case:
-            case.stmts.append(EmptyStatement())
-    for c in ast:
-        add_necessities(c)
-
-
 def on_ast(program, *operations):
     ast = util.parse(program)
     add_empty_lists(ast)
     results = []
     for op in operations:
         result = op(ast)
-        ast_copy = deepcopy(ast)
-        add_necessities(ast_copy)
-        decl_first(ast_copy)
-        results.append((util.generate(ast_copy), result))
+        results.append((util.generate(ast), result))
     return results
 
 

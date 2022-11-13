@@ -78,6 +78,34 @@ class SingleNode(Content):
         yield getattr(self.parent, self.attr_name)
 
 
+def must_be_first(ast: Node):
+    match ast:
+        case c_ast.Typedef():
+            return True
+        case c_ast.Decl(type=type) if not isinstance(type, c_ast.FuncDecl):
+            return True
+    return False
+
+
+def decl_first(ast: c_ast.FileAST):
+    ast.ext = [node for node in ast if must_be_first(node)] + [node for node in ast if not must_be_first(node)]
+
+
+def add_necessities(ast: Node):
+    def to_compound(child):
+        return c_ast.Compound([child] if child else [])
+    if isinstance(ast, c_ast.If):
+        if not isinstance(ast.iftrue, c_ast.Compound):
+            ast.iftrue = to_compound(ast.iftrue)
+        if not isinstance(ast.iffalse, c_ast.Compound):
+            ast.iffalse = to_compound(ast.iffalse)
+    match ast:
+        case c_ast.Case(stmts=[]) as case:
+            case.stmts.append(c_ast.EmptyStatement())
+    for c in ast:
+        add_necessities(c)
+
+
 class FindNodes:
     """Baseclass for transformations"""
     all = {}
@@ -125,7 +153,6 @@ class FindNodes:
                 result.extend(self._all_transforms(current, parents, visitor, index))
 
             ContextVisitor(ast, visit_node)
-            return result
         else:
             result = self._all_transforms(ast, parents, None, index)
             parents = [] + parents + [ast]
@@ -135,7 +162,14 @@ class FindNodes:
                 i += 1
             if ast.__class__ in (c_ast.Compound, c_ast.Case, c_ast.Default):
                 result += self.all_transforms(NoNode(), parents, i)
-            return result
+
+        def wrapper(func):
+            func()
+            add_necessities(ast)
+            decl_first(ast)
+
+        result = [lambda: wrapper(func) for func in result]
+        return result
 
     @cache
     def has_side_effects(self, node: Node) -> bool:
