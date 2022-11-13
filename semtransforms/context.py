@@ -90,6 +90,7 @@ class ContextVisitor:
         self.visit_node = visit_node
         # run
         self._visit(node, [])
+        self._build_labels.cache_clear()
 
     def _visit(self, current: Node, parents: typing.List[Node] = [], index: int = 0):
         """visit a Node and its child while adding variable names to the past once they are declared"""
