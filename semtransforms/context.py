@@ -1,6 +1,7 @@
 import itertools
 import random
 import typing
+from functools import cache
 
 from pycparser.c_ast import *
 
@@ -151,7 +152,7 @@ class ContextVisitor:
     def _build_context(self, current: Node, first=True):
         """creates a ContextLevel with all identifiers directly in this scope in the future"""
         if current.__class__ in (Compound, While, DoWhile, If, Switch, For) and not first:
-            self._build_labels(current)
+            self.labels = self._build_labels(current)
             return  # stop because a new scope is created
         if first:
             self.levels += [ContextLevel(current)]
@@ -168,11 +169,15 @@ class ContextVisitor:
         for child in current:
             self._build_context(child, False)
 
-    def _build_labels(self, current: Node):
+    @cache
+    def _build_labels(self, current: Node) -> typing.Dict[str, Node]:
         if current.__class__ is Label:
-            self.labels[current.name] = current
+            return {current.name: current}
+        result = {}
         for child in current:
-            self._build_labels(child)
+            result.update(self._build_labels(child))
+        return result
+
 
     @staticmethod
     def _name_and_map(node: Node, clt: ContextLevelTime) -> typing.Tuple[str, typing.Dict[str, Node]]:
@@ -267,7 +272,7 @@ class ContextVisitor:
                         for decl in self.type(var)}
 
             case Cast(to_type=type):
-                return {type.type}
+                return {_no_decl_type(type)}
             case Constant(type=type):
                 return {IdentifierType([type])}
             case Assignment(lvalue=left):
@@ -293,7 +298,7 @@ class ContextVisitor:
                 return self._typecast(node1, node2, name)
 
             case _:
-                raise NotImplementedError(f"Unsupported type {node.__class__} ({node.__repr__()})")
+                return set()
 
     def _typecast(self, node1: Node, node2: Node, name) -> typing.Set[Node]:
         """builds types possible by combining 2 type possibilities"""
