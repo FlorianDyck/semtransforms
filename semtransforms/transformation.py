@@ -144,7 +144,8 @@ class FindNodes:
 
     def all_transforms(self, ast: Node, parents: List[Node] = [], index: int = 0) -> List[Callable]:
         """iterates through all childs and finds where the AST can be transformed"""
-        if not parents:
+        is_root = not parents
+        if is_root:
             self.has_side_effects.cache_clear()
             self.has_node.cache_clear()
         if self.context:
@@ -170,7 +171,8 @@ class FindNodes:
             add_necessities(ast)
             decl_first(ast)
 
-        result = [lambda: wrapper(func) for func in result]
+        if is_root:
+            result = [lambda: wrapper(func) for func in result]
         return result
 
     @cache
