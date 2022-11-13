@@ -50,45 +50,12 @@ def regex(code: str) -> str:
     return code
 
 
-def unsupported_to_extern(code: str, replacings: List, unsupported: str) -> str:
-    """replaces any method containing the unsupported string with an extern method"""
-    while r := re.search(unsupported, code):
-        start = open = code.find("{")
-        depth = 1
-        close = code.find("}")
-        while True:
-            if close < open:
-                end = close
-                close = code.find("}", close) + 1
-                depth -= 1
-                if depth == 0:
-                    if start < r.start() < close:
-                        previous_end = max(code[:start].rfind(";"), code[:start].rfind("}")) + 1
-                        save = code[previous_end:end]
-                        code = ";".join([code[:start], code[end:]])
-                        code = "extern ".join([code[:previous_end], code[previous_end:]])
-                        replacings += [(regex(code[previous_end:start + 8]), save)]
-                        break
-                    start = open
-                    depth = 1
-            else:
-                open = code.find("{", open + 1)
-                depth += 1
-                if open == -1:
-                    if unsupported != '__extension__':
-                        print(f"unsupported: {unsupported}")
-                    code = code[:r.start()] + code[r.end():]
-                    break
-    return code
-
-
 def support_extensions(code: str, func):
     """remove code which can not be parsed by pycparser, do func and reconstruct incompatible code afterwards"""
     code = remove_comments(code)
     replacings = []  # pattern-string combinations which later must be replaced
 
-    # remove unsupported parts
-    code = unsupported_to_extern(code, replacings, "__extension__")
+    code = code.replace('__extension__', '')
 
     for keyword in ("inline", "restrict"):
         if f"__{keyword} " in code and not re.search(f"(?<!__){keyword}", code):
@@ -96,15 +63,16 @@ def support_extensions(code: str, func):
             replacings += [(keyword, f"__{keyword}")]
 
     any = "[^{};]*"
-    attr_or_const = r"(__attribute__ *\(\([^()]*(\([^()]*\)[^()]*)?\)\)|__const )"
+    nested_brackets = '[^()]*' + (r'(\([^()]*' * 100) + (r'\))?' * 100)
+    attr_or_const = rf"(__attribute__ *\(\({nested_brackets}\)\)|__const )"
     while r := re.search(f"extern{any}{attr_or_const}{any};", code):
         replacings += [(regex(re.sub(attr_or_const, "", r.group())), r.group())]
         code = re.sub(f"extern{any}{attr_or_const}{any};", re.sub(attr_or_const, " ", r.group()), code, 1)
 
-    while r := re.search(r"__attribute__ *\(\([^()]*(\([^()]*\)[^()]*)?\)\)", code):
+    while r := re.search(rf"__attribute__ *\(\({nested_brackets}\)\)", code):
         code = code[:r.start()] + code[r.end():]
 
-    for keyword in '__signed__', '__const', '__inline__':
+    for keyword in '__signed__', '__const', '__inline__', '__inline':
         code = code.replace(keyword, keyword.replace('_', ''))
 
     # execute func
