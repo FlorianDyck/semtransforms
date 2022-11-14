@@ -137,10 +137,9 @@ def for2while(self, parents: List[Node], stmts: Content, context: ContextVisitor
     match stmts[0]:
         case For(cond=cond) as f if not self.has_side_effects(cond):
             def transform():
-                stmts.replace(Compound([
-                    *(f.init.decls if f.init.__class__ is DeclList else (f.init,)),
-                    While(f.cond, Compound([f.stmt, f.next]))
-                ]))
+                loop = While(f.cond, Compound([f.stmt, f.next]))
+                stmts.replace(Compound((f.init.decls if f.init.__class__ is DeclList else [f.init]) + [loop])
+                              if f.init else loop)
             return transform
 
 
