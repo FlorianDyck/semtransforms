@@ -181,7 +181,8 @@ class ContextVisitor:
             return {current.name: current}
         result = {}
         for child in current:
-            result.update(self._build_labels(child))
+            if child:
+                result.update(self._build_labels(child))
         return result
 
 
