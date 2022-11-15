@@ -9,9 +9,11 @@ Python package for semantic-equivalent C transforms
 
 # A GLOBAL list of all available transforms
 import _thread
+import gc
 import itertools
 import multiprocessing
 import os.path
+import random
 import shutil
 import threading
 
@@ -124,13 +126,12 @@ def limit(task, timeout=100):
         result = task()
         timer.cancel()
         return result
-    except KeyboardInterrupt:
-        raise Exception('Timeout')
     finally:
         timer.cancel()
 
 
-def trans(root, base_len, output, file, task_name, *number, timeout=-1):
+def trans(root, base_len, output, file, task_name, recursion_limit, *number, timeout=-1):
+    sys.setrecursionlimit(int(recursion_limit))
     out = os.path.abspath(output)
     file_in = os.path.join(root, file)
     file_out = os.path.join(out, "{}/", os.path.abspath(root)[base_len:], file)
@@ -152,7 +153,7 @@ def trans(root, base_len, output, file, task_name, *number, timeout=-1):
             eo.write(f"{file_in} -> {os.path.abspath(root)[base_len:]}\\{file}\n{e}\n{'*' * 100}\n")
 
 
-def transform_folder(input, output, task_name, numbers, parallel):
+def transform_folder(input, output, task_name, recursion_limit, numbers, processes=1):
     base_len = len(os.path.abspath(input)) + 1
     out = os.path.abspath(output)
     print(os.path.abspath(input), os.path.abspath(output), task_name, numbers)
@@ -162,32 +163,34 @@ def transform_folder(input, output, task_name, numbers, parallel):
                 folder = os.path.join(out, f"{n}/", os.path.abspath(root)[base_len:])
                 if not os.path.exists(folder):
                     os.makedirs(folder)
-    if parallel:
-        pool = multiprocessing.Pool(multiprocessing.cpu_count() - 2)
-        pool.starmap(trans, ((root, base_len, output, f, task_name, *numbers)
-                             for root, _, files in os.walk(input) for f in files))
+    if processes > 1:
+        pool = multiprocessing.Pool(processes)
+        # shuffling files to get a better chance on having an equal load on all threads
+        args = [(root, base_len, output, f, task_name, recursion_limit, *numbers)
+                for root, _, files in os.walk(input) for f in files]
+        random.shuffle(args)
+        pool.starmap(trans, args)
     else:
         for root, _, files in os.walk(input):
             for file in files:
-                trans(root, base_len, output, file, task_name, *numbers)
+                trans(root, base_len, output, file, task_name, recursion_limit, *numbers)
 
 
-def arg_value(names, default, args=sys.argv):
+def arg_value(*names: str, args=sys.argv):
     for a in names:
-        if a not in args[:-1]:
-            continue
-        return args[args.index(a) + 1]
-    return default
+        if a in args[:-1]:
+            return args[args.index(a) + 1]
 
 
-def __main__(parallel=False):
+def __main__():
     prefix = "../" if __name__ == "__main__" else ""
-    program = arg_value(["-p", "--program"], None)
-    input = arg_value(["-f", "--file"], f"{prefix}benchmark/generation/input")
-    output = arg_value(["-o", "--out"], f"{prefix}benchmark/generation/output")
-    task_name = arg_value(["-t", "--task"], "no_recursion")
-    recursion_limit = arg_value(["-r", "--recurion-limit"], "10000")
-    numbers = arg_value(["-n", "--number"], len(task_name.split("\n")) if ":" in task_name else "100")
+    program = arg_value("-p", "--program")
+    input = arg_value("-f", "--file") or f"{prefix}benchmark/generation/input"
+    output = arg_value("-o", "--out") or f"{prefix}benchmark/generation/output"
+    task_name = arg_value("-t", "--task") or "no_fpointers"
+    recursion_limit = arg_value("-r", "--recurion-limit") or "5000"
+    numbers = arg_value("-n", "--number") or len(task_name.split("\n")) if ":" in task_name else "100"
+    processes = int(arg_value("-p", "--processes") or 1) if '-f' or '--file' in sys.argv else 1
 
     result = []
     for n in numbers.split(","):
@@ -197,9 +200,8 @@ def __main__(parallel=False):
     sys.setrecursionlimit(int(recursion_limit))
 
     if task_name == "trace_wrong":
-        results = arg_value(["-r", "--results"], r"..\benchmark\benchmark_results\cpa-comp.no_pointers_100_2_missing"
-                            r"\cpa-comp.no_pointers_100_2_missing.2022-08-19_13-19-13.results.SEMTRANS_unreach-call.csv")
-        input = arg_value(["-f", "--file"], r"..\benchmark\no_pointers_100")
+        results = arg_value("-r", "--results") or r"..\benchmark\benchmark_results\cpa-comp.no_pointers_100_2_missing\cpa-comp.no_pointers_100_2_missing.2022-08-19_13-19-13.results.SEMTRANS_unreach-call.csv"
+        input = arg_value("-f", "--file") or r"..\benchmark\no_pointers_100"
         with open(results, "r") as results:
             def ground_truth(filename, expected_verdicts={}):
                 if not expected_verdicts:
@@ -239,18 +241,17 @@ def __main__(parallel=False):
                     t = i.read()
                     t = t[3:t.find("\n*/")]
                 transform_folder(base_path, os.path.join(r"..\benchmark\generation\output", only_file[:-2]),
-                                 t, range(1, len(t.split("\n")) + 1), parallel)
+                                 t, range(1, len(t.split("\n")) + 1), processes)
                 os.remove(path)
     elif program:
         with open(output, "w") as o:
             o.write(task(task_name, program, numbers[0])[0])
     elif os.path.isfile(input):
-        with open(input, "r") as i, open(output, "w") as o:
-            o.write(task(task_name, i.read(), numbers[0])[0])
+        trans(os.path.dirname(input), len(input), output, input[input.rfind('\\') + 1:], task_name, *numbers)
     else:
-        transform_folder(input, output, task_name, numbers, parallel)
+        transform_folder(input, output, task_name, recursion_limit, numbers, processes)
 
 
 if __name__ == "__main__":
-    __main__(True)
+    __main__()
 
