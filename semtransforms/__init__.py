@@ -10,8 +10,8 @@ Python package for semantic-equivalent C transforms
 # A GLOBAL list of all available transforms
 import _thread
 import gc
-import itertools
-import multiprocessing
+from pycparser.plyparser import ParseError
+from pathos.pools import ProcessPool
 import os.path
 import random
 import shutil
@@ -164,12 +164,12 @@ def transform_folder(input, output, task_name, recursion_limit, numbers, process
                 if not os.path.exists(folder):
                     os.makedirs(folder)
     if processes > 1:
-        pool = multiprocessing.Pool(processes)
+        pool = ProcessPool(processes)
         # shuffling files to get a better chance on having an equal load on all threads
         args = [(root, base_len, output, f, task_name, recursion_limit, *numbers)
                 for root, _, files in os.walk(input) for f in files]
         random.shuffle(args)
-        pool.starmap(trans, args)
+        pool.map(trans, *zip(*args))
     else:
         for root, _, files in os.walk(input):
             for file in files:
