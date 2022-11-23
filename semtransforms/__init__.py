@@ -66,7 +66,10 @@ def all_transformer():
 
 def transform(program, transformer, *number):
     splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
-    return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: transformer.transform(ast, split)) for split in splits]))
+    def part(split):
+        return lambda ast: transformer.transform(ast, split)
+
+    return support_extensions(program, lambda x: on_ast(x, *[part(split) for split in splits]))
 
 
 def trace(program, trace, *number):
