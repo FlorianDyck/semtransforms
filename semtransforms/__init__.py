@@ -28,21 +28,32 @@ from semtransforms.transformations import *
 SINGLE_TRANSFORMS = [t for t in FindNodes.all.values() if t not in (add_compound,)]
 
 
+class _TransformerFN:
+
+    def __init__(self, transforms, numbers):
+        self._transformer = Transformer(*transforms)
+        self._numbers     = numbers
+    
+    def __call__(self, source_code, n = None):
+        if n is None: n = self._numbers
+        return transform(source_code, self._transformer, *n)
+
+
 def _build(*trans, number=(10,)):
-    return lambda x, n=number: transform(x, Transformer(*trans), *n)
+    return _TransformerFN(trans, number)
 
 
 def _build_except(*trans, number=(10,)):
-    return lambda x, n=number: transform(x, Transformer(*[t for t in SINGLE_TRANSFORMS if t not in trans]), *n)
+    return _TransformerFN([t for t in SINGLE_TRANSFORMS if t not in trans], number)
 
 
 MIXED_TRANSFORMS = {
     "identity": lambda x: (x, ""),
-    "random": _build_except(number=1),
-    "mixed": _build_except(number=50),
-    "no_recursion": _build_except(to_recursive, number=50),
-    "no_pointers": _build_except(re_ref, re_ref_no_methods, to_method, insert_method, to_recursive, number=50),
-    "no_fpointers": _build_except(re_ref, to_method, insert_method, to_recursive, number=50),
+    "random": _build_except(number=(1,)),
+    "mixed": _build_except(number=(50,)),
+    "no_recursion": _build_except(to_recursive, number=(50,)),
+    "no_pointers": _build_except(re_ref, re_ref_no_methods, to_method, insert_method, to_recursive, number=(50,)),
+    "no_fpointers": _build_except(re_ref, to_method, insert_method, to_recursive, number=(50,)),
     "arrays": _build(to_array),
     "re_ref": _build(re_ref),
     "loops": _build(deepen_while, for2while, break2goto),
@@ -65,7 +76,10 @@ def all_transformer():
 
 
 def transform(program, transformer, *number):
-    splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
+    if len(number) >= 1:
+        splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
+    else:
+        splits = [1]
     return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: transformer.transform(ast, split)) for split in splits]))
 
 
