@@ -1,72 +1,24 @@
 import os
-import argparse
 import gzip
 import json
 import multiprocessing as mp
 
-from glob import glob
-from tqdm import tqdm
+from pathos.pools import ProcessPool
 
+from tqdm import tqdm
 from contextlib import contextmanager
 
+# Jsonl (GZ) handler --------------------------------------------------------------------
 
-# Load files ----------------------------------------------------------------
+class JsonlSaver:
 
-def iter_jsonl(jsonl_file_paths, compressed = True):
-
-    open_func = gzip.open if compressed else open
-
-    for path in jsonl_file_paths:
-        with open_func(path, 'r') as lines:
-            for line in lines:
-                yield json.loads(line)
-
-
-# Grouping ----------------------------------------------------------------
-
-class StreamGrouper:
-
-    def __init__(self, group_by, buffer_size = 1e3):
-        self.group_by = group_by
-        self.buffer_size = buffer_size
-
-        self.key_queue  = []
-        self.key_groups = {}
-
-    def _add_to_group(self, instance):
-        instance_key = self.group_by(instance)
-
-        if instance_key not in self.key_groups:
-            self.key_groups[instance_key] = []
-            self.key_queue.append(instance_key)
-        
-        self.key_groups[instance_key].append(instance)
-
-    def __call__(self, instance_stream):
-        
-        for instance in instance_stream:
-            self._add_to_group(instance)
-
-            if len(self.key_queue) > self.buffer_size:
-                emit_key = self.key_queue.pop(0)
-                yield self.key_groups[emit_key]
-                del self.key_groups[emit_key]
-
-        while len(self.key_queue) > 0:
-            emit_key = self.key_queue.pop(0)
-            yield self.key_groups[emit_key]
-            del self.key_groups[emit_key]
-
-
-# Jsonl Gz reduce --------------------------------------------------------------------
-
-class JsonlGzSaver:
-
-    def __init__(self, save_dir, compress = True, num_objects = 1e5):
+    def __init__(self, save_dir, gzip_compress = False, num_objects = 1e5):
         self.save_dir = save_dir
         self.num_objects = num_objects
-        self.compress = compress
+        self.gzip_compress = gzip_compress
         
+        self._file_ending = ".jsonl.gz" if gzip_compress else ".jsonl"
+
         self.object_count = 0
         self.file_count   = 0
 
@@ -75,11 +27,17 @@ class JsonlGzSaver:
         self._update_handler()
 
     def _file_path(self):
-        return os.path.join(self.save_dir, "stats-%d.jsonl" % self.file_count + (".gz" if self.compress else ""))
+        return os.path.join(self.save_dir, "statistics-%d%s" % (self.file_count, self._file_ending))
 
     def _find_unique_index(self):
         while os.path.exists(self._file_path()):
             self.file_count += 1
+
+    def _open_file(self, file_path):
+        if self.gzip_compress:
+            return gzip.open(file_path, "wb")
+        else:
+            return open(file_path, "wb")
 
     def _update_handler(self):
         
@@ -90,7 +48,7 @@ class JsonlGzSaver:
 
         if self.file_handler is not None: self.file_handler.close()
 
-        self.file_handler = gzip.open(file_path, "wb") if self.compress else open(file_path, "wb")
+        self.file_handler = self._open_file(file_path)
         self.file_count += 1
         self.object_count = 0
 
@@ -108,7 +66,7 @@ class JsonlGzSaver:
 
 @contextmanager
 def jsonl_reduce_io(output_dir, compress = False):
-    saver = JsonlGzSaver(output_dir, compress=compress)
+    saver = JsonlSaver(output_dir, gzip_compress = compress)
     try:
         
         def call_save(obj):
@@ -117,6 +75,7 @@ def jsonl_reduce_io(output_dir, compress = False):
         yield call_save
     finally:
         saver.close()
+
 
 # Map multiprocessing ----------------------------------------------------------------
 
@@ -128,34 +87,58 @@ def pmap(map_fn, data):
         for output in map(map_fn, data):
             yield output
 
-    with mp.Pool(processes = cpu_count) as pool:
-        for output in pool.imap_unordered(map_fn, data, chunksize = 4 * cpu_count):
+    with ProcessPool(processes = cpu_count) as pool:
+        for output in pool.uimap(map_fn, data, chunksize = 4 * cpu_count):
             yield output
 
+# Helper ------------------------------------------------------------------
+
+
+def _reduce_mapped_instances(mapped_instance_stream, reducer_fn):
+    # Reduce all mapped instances
+    for mapped_instances in mapped_instance_stream:
+        if mapped_instances is None: continue
+
+        for mapped_instance in mapped_instances:
+            reducer_fn(mapped_instance)
+
+
+def _reduce_to_file(mapped_instance_stream, dir_path, compress = False):
+    with jsonl_reduce_io(dir_path, compress) as saver:
+        _reduce_mapped_instances(mapped_instance_stream, saver)
+
+
+def _reduce_generator(mapped_instance_stream):
+    for mapped_instances in mapped_instance_stream:
+        if mapped_instances is None: continue
+
+        for mapped_instance in mapped_instances:
+            yield mapped_instance
+
+
 # API method ----------------------------------------------------------------
+# Map step runs in parrallel / Reduce in single thread
 
-def mapreduce(map_fn, instance_stream, reduce_fn = None, group_by = None, parallel = False, group_buffer = 100, compress = False):
 
-    max_size = len(instance_stream)
+def mapreduce(data, map_fn, reducer_fn = None, parallel = False, compress = False, report = False):
+    """
+    Map then reduce functions
+    Output of map has to be always a collection
+    reducer_fn == None: Same as pmap / map
+    reducer_fn == file_path: Saves all entries to jsonl into a dir
+    reducer_fn == callable : Calls reducer with the mapped results
+    """
 
-    # Group if necessary
-    if group_by is not None:
-        instance_stream = StreamGrouper(group_by, group_buffer)(instance_stream)
-    
-    # Map all instances in parallel
     if parallel:
-        mapped_instance_stream = pmap(map_fn, instance_stream)
+        mapped_instance_stream = pmap(map_fn, data)
     else:
-        mapped_instance_stream = map(map_fn, instance_stream)
+        mapped_instance_stream = map(map_fn, data)
 
-    if isinstance(reduce_fn, str):
-        with jsonl_reduce_io(reduce_fn, compress = compress) as saver:
-            for mapped_instances in tqdm(mapped_instance_stream, total=max_size):
-                for mapped_instance in mapped_instances:
-                    if mapped_instance is None: continue
-                    saver(mapped_instance)
+    if report: mapped_instance_stream = tqdm(mapped_instance_stream, total = len(data))
+
+    if isinstance(reducer_fn, str):
+        _reduce_to_file(mapped_instance_stream, reducer_fn, compress)
+    elif callable(reducer_fn):
+        _reduce_mapped_instances(mapped_instance_stream, reducer_fn)
     else:
-        for mapped_instances in tqdm(mapped_instance_stream, total = max_size):
-            for mapped_instance in mapped_instances:
-                if mapped_instance is None: continue
-                reduce_fn(mapped_instance) 
+        return _reduce_generator(mapped_instance_stream)

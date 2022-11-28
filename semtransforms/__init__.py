@@ -36,6 +36,7 @@ class _TransformerFN:
     
     def __call__(self, source_code, n = None):
         if n is None: n = self._numbers
+        if isinstance(n, int): n = (n,)
         return transform(source_code, self._transformer, *n)
 
 

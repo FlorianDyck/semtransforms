@@ -3,6 +3,7 @@ import sys
 import argparse
 import yaml
 import random
+import traceback
 
 from glob import glob
 from time import time
@@ -21,6 +22,7 @@ class FileTransformer:
         self._transforms = []
         self._output_dir = config.output_dir
         self._num_transforms = config.num_transforms
+        self._recursion_limit = config.recursion_limit
 
         for transform_name in AVAILABLE_TRANSFORMS:
             if getattr(config, transform_name, False):
@@ -29,6 +31,8 @@ class FileTransformer:
         assert len(self._transforms) > 0, f"You have to select at least one transform from {AVAILABLE_TRANSFORMS}"
 
     def __call__(self, file_name):
+        sys.setrecursionlimit(self._recursion_limit)
+
         if len(self._transforms) == 1:
             transform = self._transforms[0]
         else:
@@ -37,10 +41,23 @@ class FileTransformer:
         with open(file_name, 'r') as f:
             source_code = f.read()
 
+        num_transforms = None if self._num_transforms <= 0 else self._num_transforms
+
         start_time = time()
 
+        try:
+            transforms = transform(source_code, n = num_transforms)
+        except Exception:
+            traceback.print_exc()
+            return [{
+                "source_file": file_name,
+                "exception"  : traceback.format_exc(),
+                "walltime"   : time() - start_time,
+            }]
+
+
         output_files = []
-        for i, (transformed, trace) in enumerate(transform(source_code)):
+        for i, (transformed, trace) in enumerate(transforms):
             output_path = os.path.join(self._output_dir, os.path.basename(file_name))
             
             if i > 0:
@@ -103,7 +120,8 @@ def prepare_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_files", nargs = "+")
     parser.add_argument("-o", "--output_dir", type = str, required = True)
-    parser.add_argument("--num_transforms", type = int, default = 1)
+    parser.add_argument("--num_transforms", type = int, default = -1)
+    parser.add_argument("--recursion_limit", type = int, default = 5000)
 
     for transform_name in AVAILABLE_TRANSFORMS:
         parser.add_argument(f"--{transform_name}", action = "store_true")
@@ -119,7 +137,6 @@ def main(argv = None):
 
     print("Search for input files...")
 
-
     input_files = parse_input_files(args.input_files)
 
     # Gurantees that files of similar complexity are batched together
@@ -131,7 +148,7 @@ def main(argv = None):
     transformer = FileTransformer(args)
     
     # Run mapreduce
-    mapreduce(transformer, input_files, reduce_fn = args.output_dir, parallel = args.parallel)
+    mapreduce(input_files, transformer, reducer_fn = args.output_dir, parallel = args.parallel, report = True)
 
 
 
