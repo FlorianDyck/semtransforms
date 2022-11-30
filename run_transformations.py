@@ -79,6 +79,15 @@ class FileTransformer:
 
 # Parsing input arguments ----------------------------------------------------------------
 
+def dedup_input_files(args, input_files):
+    
+    def _exists(file_name):
+        output_path = os.path.join(args.output_dir, os.path.basename(file_name))
+        return not os.path.exists(output_path)
+
+    return list(filter(_exists, input_files))
+
+
 def _parse_task_file(task_file_path):
     with open(task_file_path, 'r') as task_file:
         task_file = yaml.safe_load(task_file)
@@ -122,6 +131,7 @@ def prepare_parser():
     parser.add_argument("-o", "--output_dir", type = str, required = True)
     parser.add_argument("--num_transforms", type = int, default = -1)
     parser.add_argument("--recursion_limit", type = int, default = 5000)
+    parser.add_argument("--no_dedup", action = "store_true")
 
     for transform_name in AVAILABLE_TRANSFORMS:
         parser.add_argument(f"--{transform_name}", action = "store_true")
@@ -138,6 +148,9 @@ def main(argv = None):
     print("Search for input files...")
 
     input_files = parse_input_files(args.input_files)
+
+    if args.no_dedup:
+        input_files = dedup_input_files(args, input_files)
 
     # Gurantees that files of similar complexity are batched together
     input_files = sorted(input_files, key = lambda path: os.stat(path).st_size)

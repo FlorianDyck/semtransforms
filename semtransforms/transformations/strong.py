@@ -67,6 +67,7 @@ def if0error(finder: FindStatements, parents: List[Node], stmts: Content, contex
     return lambda: stmts.replace(If(Constant("int", "0"), verifier.error_call(), None))
 
 
+
 @find_statements(length=1, modifiable_length=False, context=True)
 def to_method(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     if isinstance(stmts[0], Compound) and not\
@@ -91,8 +92,9 @@ def to_method(finder: FindStatements, parents: List[Node], stmts: Content, conte
             for node, _ in urs:
                 node.replace(UnaryOp("*", node[0]))
             # create function at the start of the program
-            parents[0].ext.insert(0, FuncDef(Decl(name, [], [], [], [], FuncDecl(ParamList(params),
-                    TypeDecl(name, [], None, IdentifierType(['void']))), None, None), None, stmts[0]))
+            void_function = _declare_void_function(name, params)
+            void_function = _define_function(name, void_function, stmts[0])
+            parents[0].ext.insert(0, void_function)
             # call the function
             stmts.replace(FuncCall(ID(name), ExprList([UnaryOp("&", ID(id)) for id in names])))
 
@@ -143,9 +145,9 @@ def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, co
 
             # create function at the start of the program
             call = FuncCall(ID(name), ExprList([ID(id) for id in names]))
-            parents[0].ext.insert(0, FuncDef(Decl(name, [], [], [], [], FuncDecl(ParamList(params),
-                    TypeDecl(name, [], None, IdentifierType(['void']))), None, None), None,
-                                             Compound([If(stmts[0].cond, Compound([stmts[0].stmt, call]), None)])))
+            void_function = _declare_void_function(name, params)
+            void_function = _define_function(name, void_function, Compound([If(stmts[0].cond, Compound([stmts[0].stmt, call]), None)]))
+            parents[0].ext.insert(0, void_function)
             # call the function
             stmts.replace(FuncCall(ID(name), ExprList([UnaryOp("&", ID(id)) for id in names])))
 
@@ -195,3 +197,34 @@ def insert_method(finder: FindStatements, parents: List[Node], stmts: Content, c
             return transform
 
 
+# Helper ----------------------------------------------------------------
+
+def _declare_void_function(name, params):
+    return FuncDecl(
+        args = ParamList(params),
+        type = TypeDecl(
+            declname = name,
+            quals = [],
+            align = None,
+            type  = IdentifierType(['void']),
+            attrs = None
+        ),
+        attrs = None
+    )
+
+def _define_function(name, declaration, body):
+    return FuncDef(
+        Decl(
+            name = name,
+            quals = [],
+            align = [],
+            storage = [],
+            funcspec = [],
+            attrs = [],
+            type = declaration,
+            init = None,
+            bitsize = None,
+        ),
+        None,
+        body
+    )

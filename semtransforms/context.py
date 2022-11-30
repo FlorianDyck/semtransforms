@@ -84,8 +84,8 @@ class ContextVisitor:
         self.func_defs = {}
         self.levels = [ContextLevel(node)]
         # initialize functions which are defined by the compiler
-        self.levels[0].past.default['__PRETTY_FUNCTION__'] = Decl('__PRETTY_FUNCTION__', [], [], [], [],
-                  PtrDecl([], TypeDecl('__PRETTY_FUNCTION__', [], None, IdentifierType(['char']))), None, None)
+        self.levels[0].past.default['__PRETTY_FUNCTION__'] = Decl('__PRETTY_FUNCTION__', [], [], [], [], [],
+                  PtrDecl([], TypeDecl('__PRETTY_FUNCTION__', [], None, IdentifierType(['char']), [])), None, None)
         self._build_context(node)
         self.visit_node = visit_node
         # run
@@ -124,6 +124,7 @@ class ContextVisitor:
                 del self.levels[-1]
             case FuncDef(decl=Decl(name=name, type=type) as decl, body=body):
                 # This a scope with parameters as variables, a new ContextLevel has to be temporarily created
+                if type is None: print(decl); print("---------")
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
                 self._build_context(type)
@@ -156,6 +157,7 @@ class ContextVisitor:
 
     def _build_context(self, current: Node, first=True):
         """creates a ContextLevel with all identifiers directly in this scope in the future"""
+        assert current is not None
         if current.__class__ in (Compound, While, DoWhile, If, Switch, For) and not first:
             self.labels = self._build_labels(current)
             return  # stop because a new scope is created
@@ -288,7 +290,7 @@ class ContextVisitor:
                 return self.type(last, name)
 
             case UnaryOp(op="&", expr=expr):
-                return {PtrDecl([], TypeDecl(name, [], None, t)) for t in self.type(expr, name)}
+                return {PtrDecl([], TypeDecl(name, [], None, t, [])) for t in self.type(expr, name)}
             case UnaryOp(op="*", expr=expr):
                 type = self.type(expr, name)
                 if len(type) == 1 and {t.__class__ for t in type} == {PtrDecl}:

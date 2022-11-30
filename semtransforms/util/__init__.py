@@ -27,7 +27,7 @@ def generate(node: Node, generator=c_generator.CGenerator()) -> str:
 
 
 def simple_declaration(name: str, type: Node, init: Node):
-    return c_ast.Decl(name, [], [], [], [], c_ast.TypeDecl(name, [], None, type), init, None)
+    return c_ast.Decl(name, [], [], [], [], [], c_ast.TypeDecl(name, [], None, type, []), init, None)
 
 
 def identifier_declaration(name: str, type: str, init: Node):

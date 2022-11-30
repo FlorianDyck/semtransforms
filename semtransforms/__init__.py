@@ -60,6 +60,48 @@ MIXED_TRANSFORMS = {
     "loops": _build(deepen_while, for2while, break2goto),
     "methods": _build(add_compound, to_method, insert_method),
     "recursive": _build(for2while, to_recursive),
+    "spin_config": _build(
+
+        # Top level transformations
+        
+        # Loop deepening
+        deepen_while,
+
+        # IF insertion
+        if0error,
+        add_if1,
+
+        # Pointer introduction
+        re_ref_no_methods,
+
+        # Array introduction
+        to_array,
+
+        # Function encapsulation
+        to_method,
+
+        # Function inlining
+        insert_method,
+
+        # Loop to recursion
+        to_recursive,
+
+        # Simple helper transformations
+        for2while,
+        break2goto,
+        arithmetic_nothing,
+        logic_nothing,
+        flip_if,
+        fast_compound,
+        extract_if,
+        expand_assignment,
+        swap_binary,
+        extract_unary,
+        add_nondet,
+
+        # Number of runs
+        number = (1,)
+    )
 }
 AVAILABLE_TRANSFORMS = list(MIXED_TRANSFORMS.keys())  # + list(FindNodes.all.keys())
 
