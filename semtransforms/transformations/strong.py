@@ -28,7 +28,14 @@ def re_ref(self, parents: List[Node], expr: Content, context: ContextVisitor):
 def re_ref_no_methods(self, parents: List[Node], expr: Content, context: ContextVisitor):
     if isinstance(expr[0], ID) and not\
             (isinstance(parents[-1], c_ast.StructRef) and parents[-1].field is expr[0])\
+            and not (isinstance(parents[-1], c_ast.FuncCall) and parents[-1].name is expr[0])\
             and not any(isinstance(t, FuncDecl) for t in context.type(expr[0])):
+        return lambda: expr.replace(UnaryOp("*", UnaryOp("&", expr.content()[0])))
+
+
+@find_expressions(context=True)
+def re_ref_locals(self, parents: List[Node], expr: Content, context: ContextVisitor):
+    if isinstance(expr[0], ID) and expr[0].name not in context.globals and edit_allowed(expr[0].name):
         return lambda: expr.replace(UnaryOp("*", UnaryOp("&", expr.content()[0])))
 
 
@@ -72,11 +79,15 @@ def if0error(finder: FindStatements, parents: List[Node], stmts: Content, contex
 def to_method(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     if isinstance(stmts[0], Compound) and not\
             (finder.has_break(stmts[0]) or finder.has_jumps(stmts[0]) or finder.has_return(stmts[0])):
+        
+        if len(stmts[0].block_items) == 0: return
+
         name = context.free_name()
         # get names and types of all variables defined before used in this block
         urs = unknown_references(stmts[0])
-        names = {ur[0][0].name for ur in urs}
-        original_params = [context.value(id) for id in names]
+        local_urs = [ur for ur in urs if ur[0][0].name not in context.globals]
+        local_names = {ur[0][0].name for ur in local_urs}
+        original_params = [context.value(id) for id in local_names]
         if any(has_variable_array_size(p) for p in original_params):
             return
 
@@ -85,18 +96,23 @@ def to_method(finder: FindStatements, parents: List[Node], stmts: Content, conte
             params = [copy.deepcopy(p) for p in original_params]
             for param in params:
                 param.init = None
+                
+                if isinstance(param.type, ArrayDecl):
+                    param.type = PtrDecl([], param.type.type)
+
                 param.type = PtrDecl([], param.type)
                 param.storage = []
                 param.funcspec = []
 
-            for node, _ in urs:
+            for node, _ in local_urs:
                 node.replace(UnaryOp("*", node[0]))
             # create function at the start of the program
             void_function = _declare_void_function(name, params)
             void_function = _define_function(name, void_function, stmts[0])
-            parents[0].ext.insert(0, void_function)
+            parent_pos    = _find_parent_pos_in_ext(parents)
+            parents[0].ext.insert(parent_pos, void_function)
             # call the function
-            stmts.replace(FuncCall(ID(name), ExprList([UnaryOp("&", ID(id)) for id in names])))
+            stmts.replace(FuncCall(ID(name), ExprList([UnaryOp("&", ID(id)) for id in local_names])))
 
         return transform
 
@@ -105,10 +121,12 @@ def to_method(finder: FindStatements, parents: List[Node], stmts: Content, conte
 def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     if isinstance(stmts[0], While) and not (finder.has_jumps(stmts[0]) or finder.has_return(stmts[0])):
         name = context.free_name()
+
         # get names and types of all variables defined before used in this block
         urs = unknown_references(stmts[0])
-        names = {ur[0][0].name for ur in urs}
-        original_params = [context.value(id) for id in names]
+        local_urs = [ur for ur in urs if ur[0][0].name not in context.globals]
+        local_names = {ur[0][0].name for ur in local_urs}
+        original_params = [context.value(id) for id in local_names]
         if any(has_variable_array_size(p) for p in original_params):
             return
 
@@ -117,11 +135,15 @@ def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, co
             params = [copy.deepcopy(p) for p in original_params]
             for param in params:
                 param.init = None
+
+                if isinstance(param.type, ArrayDecl):
+                    param.type = PtrDecl([], param.type.type)
+
                 param.type = PtrDecl([], param.type)
                 param.storage = []
                 param.funcspec = []
 
-            for node, _ in urs:
+            for node, _ in local_urs:
                 node.replace(UnaryOp("*", node[0]))
 
             def break2return(node: Node):
@@ -144,12 +166,13 @@ def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, co
             break2return(stmts[0])
 
             # create function at the start of the program
-            call = FuncCall(ID(name), ExprList([ID(id) for id in names]))
+            call = FuncCall(ID(name), ExprList([ID(id) for id in local_names]))
             void_function = _declare_void_function(name, params)
             void_function = _define_function(name, void_function, Compound([If(stmts[0].cond, Compound([stmts[0].stmt, call]), None)]))
-            parents[0].ext.insert(0, void_function)
+            parent_pos    = _find_parent_pos_in_ext(parents)
+            parents[0].ext.insert(parent_pos, void_function)
             # call the function
-            stmts.replace(FuncCall(ID(name), ExprList([UnaryOp("&", ID(id)) for id in names])))
+            stmts.replace(FuncCall(ID(name), ExprList([UnaryOp("&", ID(id)) for id in local_names])))
 
         return transform
 
@@ -157,7 +180,7 @@ def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, co
 @find_statements(length=1, modifiable_length=False, context=True)
 def insert_method(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     match stmts[0]:
-        case FuncCall(name=ID(name=name)) as call if name in context.func_defs:
+        case FuncCall(name=ID(name=name)) as call if edit_allowed(name) and name in context.func_defs:
             func_def = context.func_defs[name]
             if finder.has_jumps(func_def.body) or finder.has_return(func_def.body):
                 return
@@ -212,6 +235,7 @@ def _declare_void_function(name, params):
         attrs = None
     )
 
+
 def _define_function(name, declaration, body):
     return FuncDef(
         Decl(
@@ -228,3 +252,13 @@ def _define_function(name, declaration, body):
         None,
         body
     )
+
+
+def _find_parent_pos_in_ext(parents):
+    root = parents[0]
+    def_or_others = parents[1]
+
+    if isinstance(def_or_others, FuncDef):
+        return next(i for i, child in enumerate(root.ext) if child == def_or_others)
+    
+    return 0

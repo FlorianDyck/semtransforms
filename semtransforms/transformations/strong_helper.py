@@ -120,7 +120,7 @@ def extract_unary(self, parents: List[Node], stmts: Content, context: ContextVis
         case c_ast.Assignment(rvalue=c_ast.UnaryOp(op=op, expr=expr)):
             attr_name = "rvalue"
     if attr_name and op in "&*+-!~":
-        if op == "&" and isinstance(context.type(stmts[0].expr), FuncDecl):
+        if op == "&" and isinstance(context.type(getattr(stmts[0], attr_name)), FuncDecl):
             return
         name = context.free_name()
         type = context.type(expr, name)

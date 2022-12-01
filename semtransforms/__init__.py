@@ -60,6 +60,12 @@ MIXED_TRANSFORMS = {
     "loops": _build(deepen_while, for2while, break2goto),
     "methods": _build(add_compound, to_method, insert_method),
     "recursive": _build(for2while, to_recursive),
+
+    # Simple transformations
+    "inline_methods"   : _build(insert_method),
+    "to_methods": _build(to_method),
+
+    # SPIN configs
     "spin_config": _build(
 
         # Top level transformations
@@ -72,7 +78,7 @@ MIXED_TRANSFORMS = {
         add_if1,
 
         # Pointer introduction
-        re_ref_no_methods,
+        re_ref_locals,
 
         # Array introduction
         to_array,
@@ -92,7 +98,6 @@ MIXED_TRANSFORMS = {
         arithmetic_nothing,
         logic_nothing,
         flip_if,
-        fast_compound,
         extract_if,
         expand_assignment,
         swap_binary,
@@ -103,6 +108,7 @@ MIXED_TRANSFORMS = {
         number = (1,)
     )
 }
+
 AVAILABLE_TRANSFORMS = list(MIXED_TRANSFORMS.keys())  # + list(FindNodes.all.keys())
 
 
@@ -147,9 +153,11 @@ def on_ast(program, *operations):
     ast = util.parse(program)
     add_empty_lists(ast)
     results = []
+
     for op in operations:
         result = op(ast)
         results.append((util.generate(ast), result))
+
     return results
 
 
