@@ -259,7 +259,7 @@ class FindStatements(FindNodes):
                 elif child_index == 0:
                     result += self._transforms(parents, Nodes(all, 0, len(all)), context)
         match ast:
-            case c_ast.DoWhile(), c_ast.For(), c_ast.While():
+            case c_ast.DoWhile() | c_ast.For() | c_ast.While():
                 return result + self.names_if_modifiable(parents, ast, context, "stmt")
             case c_ast.If(iffalse=None):
                 return result + self.names_if_modifiable(parents, ast, context, "iftrue")
