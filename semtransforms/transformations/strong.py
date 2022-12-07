@@ -5,6 +5,8 @@ from pycparser.c_ast import *
 
 from semtransforms.transformation import *
 from semtransforms.util import *
+
+from semtransforms.context import is_generated_identifier
 from semtransforms.util import verifier
 
 
@@ -51,6 +53,8 @@ def add_if_rand(self, parents: List[Node], stmts: Content, context: ContextVisit
 def deepen_while(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     match stmts[0]:
         case While(cond=cond, stmt=stmt) as w if not (finder.has_side_effects(cond) or finder.has_break(stmt)):
+            if finder.has_func_calls(cond): _restructure_loop_with_func_call_condition(context, stmts)
+
             return lambda: setattr(w, "stmt", While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt))
 
 
@@ -79,15 +83,21 @@ def if0error(finder: FindStatements, parents: List[Node], stmts: Content, contex
 def to_method(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     if isinstance(stmts[0], Compound) and not\
             (finder.has_break(stmts[0]) or finder.has_jumps(stmts[0]) or finder.has_return(stmts[0])):
+
+        # Handling struct ref does not seem to be really supported
+        # TODO: Fix and drop this condition
+        if finder.has_struct_ref(stmts[0]): return
         
         if len(stmts[0].block_items) == 0: return
 
-        name = context.free_name()
+        name = context.free_name(prefix = "func_")
         # get names and types of all variables defined before used in this block
         urs = unknown_references(stmts[0])
         local_urs = [ur for ur in urs if ur[0][0].name not in context.globals]
         local_names = {ur[0][0].name for ur in local_urs}
         original_params = [context.value(id) for id in local_names]
+
+        # Why is this needed? We can process variable array sizes via pointers
         if any(has_variable_array_size(p) for p in original_params):
             return
 
@@ -97,8 +107,8 @@ def to_method(finder: FindStatements, parents: List[Node], stmts: Content, conte
             for param in params:
                 param.init = None
                 
-                if isinstance(param.type, ArrayDecl):
-                    param.type = PtrDecl([], param.type.type)
+                #if isinstance(param.type, ArrayDecl):
+                #    param.type = PtrDecl([], param.type.type)
 
                 param.type = PtrDecl([], param.type)
                 param.storage = []
@@ -120,13 +130,20 @@ def to_method(finder: FindStatements, parents: List[Node], stmts: Content, conte
 @find_statements(length=1, modifiable_length=False, context=True)
 def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     if isinstance(stmts[0], While) and not (finder.has_jumps(stmts[0]) or finder.has_return(stmts[0])):
-        name = context.free_name()
+
+        # Handling struct ref does not seem to be really supported
+        # TODO: Fix and drop this condition
+        if finder.has_struct_ref(stmts[0]): return
+
+        name = context.free_name(prefix = "func_")
 
         # get names and types of all variables defined before used in this block
         urs = unknown_references(stmts[0])
         local_urs = [ur for ur in urs if ur[0][0].name not in context.globals]
         local_names = {ur[0][0].name for ur in local_urs}
         original_params = [context.value(id) for id in local_names]
+
+        # Why is this needed? We can process variable array sizes via pointers
         if any(has_variable_array_size(p) for p in original_params):
             return
 
@@ -136,8 +153,8 @@ def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, co
             for param in params:
                 param.init = None
 
-                if isinstance(param.type, ArrayDecl):
-                    param.type = PtrDecl([], param.type.type)
+                #if isinstance(param.type, ArrayDecl):
+                #    param.type = PtrDecl([], param.type.type)
 
                 param.type = PtrDecl([], param.type)
                 param.storage = []
@@ -181,7 +198,16 @@ def to_recursive(finder: FindStatements, parents: List[Node], stmts: Content, co
 def insert_method(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     match stmts[0]:
         case FuncCall(name=ID(name=name)) as call if edit_allowed(name) and name in context.func_defs:
+            if is_generated_identifier(name, prefix = "func_"):
+                # We do not want to reinline an encapsuled function
+                return
+
             func_def = context.func_defs[name]
+
+            if isinstance(func_def, c_ast.Decl):
+                # External functions are not inlined
+                return
+
             if finder.has_jumps(func_def.body) or finder.has_return(func_def.body):
                 return
             params = func_def.decl.type.args
@@ -193,7 +219,7 @@ def insert_method(finder: FindStatements, parents: List[Node], stmts: Content, c
             param_names = {p.name for p in params}
             temp_names = []
             while len(temp_names) < len(params):
-                temp_names.append(context.free_name())
+                temp_names.append(context.free_name(prefix = "param_"))
 
             def transform():
                 if params:
@@ -262,3 +288,48 @@ def _find_parent_pos_in_ext(parents):
         return next(i for i, child in enumerate(root.ext) if child == def_or_others)
     
     return 0
+
+
+def _find_nodes(root, node_type):
+    
+    for attr_name, child in root.children():
+        if isinstance(child, node_type):
+            yield SingleNode(root, attr_name)
+        
+        for _other in _find_nodes(child, node_type):
+            yield _other
+
+
+
+def _restructure_loop_with_func_call_condition(context, loop):
+
+    loop_node  = loop[0]
+    loop_cond  = loop_node.cond 
+    func_calls = list(_find_nodes(loop_cond, c_ast.FuncCall))
+    if len(func_calls) == 0: return
+
+    # Add compound to loop if necessary
+    if not isinstance(loop_node.stmt, c_ast.Compound):
+        loop_node.stmt = c_ast.Compound(block_items=[loop_node.stmt])
+
+    output_stmts = []
+    for func_call in func_calls:
+        name = func_call.name.name
+        func_def = context.func_defs[name]
+        if hasattr(func_def, "decl"): func_def = func_def.decl
+
+        func_type   = func_def.type
+
+        new_name    = context.free_name(prefix = "call_")
+        return_type = func_type.type.type
+
+        output_stmts.append(simple_declaration(new_name, return_type, func_call[0]))
+        loop_node.stmt.block_items.append(assignment_expression(new_name, func_call[0]))
+        func_call.replace(c_ast.ID(name = new_name))
+        #print(func_call[0])
+
+    output_stmts.append(loop_node)
+
+    # Replace all
+    loop.replace(c_ast.Compound(block_items=output_stmts))
+

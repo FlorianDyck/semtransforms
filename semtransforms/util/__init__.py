@@ -33,6 +33,8 @@ def simple_declaration(name: str, type: Node, init: Node):
 def identifier_declaration(name: str, type: str, init: Node):
     return simple_declaration(name, c_ast.IdentifierType([type]), init)
 
+def assignment_expression(name: str, init: Node):
+    return c_ast.Assignment(op = "=", lvalue = c_ast.ID(name = name), rvalue = init)
 
 def equals(n1, n2) -> bool:
     """recursively checks whether to nodes are the same"""
@@ -95,8 +97,8 @@ def has_variable_array_size(node: Node):
 
 
 def can_rename(node: Node):
-    return not (isinstance(node, c_ast.ArrayDecl), isinstance(node, c_ast.FuncDecl))\
-           and (not (hasattr(node, "type") and can_rename(node.type)))
+    return not (isinstance(node, c_ast.ArrayDecl) or isinstance(node, c_ast.FuncDecl))\
+           and (not hasattr(node, "type") or can_rename(node.type))
 
 
 def rename(node: Node, name: str):

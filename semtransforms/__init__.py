@@ -64,6 +64,7 @@ MIXED_TRANSFORMS = {
     # Simple transformations
     "inline_methods"   : _build(insert_method),
     "to_methods": _build(to_method),
+    "deepen_while": _build(deepen_while, for2while),
 
     # SPIN configs
     "spin_config": _build(
@@ -103,6 +104,48 @@ MIXED_TRANSFORMS = {
         swap_binary,
         extract_unary,
         add_nondet,
+        fast_compound,
+
+        # Number of runs
+        number = (1,)
+    ),
+
+     # SPIN configs
+    "spin_norec": _build(
+
+        # Top level transformations
+        
+        # Loop deepening
+        deepen_while,
+
+        # IF insertion
+        if0error,
+        add_if1,
+
+        # Pointer introduction
+        re_ref_locals,
+
+        # Array introduction
+        to_array,
+
+        # Function encapsulation
+        to_method,
+
+        # Function inlining
+        insert_method,
+
+        # Simple helper transformations
+        for2while,
+        break2goto,
+        arithmetic_nothing,
+        logic_nothing,
+        flip_if,
+        extract_if,
+        expand_assignment,
+        swap_binary,
+        extract_unary,
+        add_nondet,
+        fast_compound,
 
         # Number of runs
         number = (1,)

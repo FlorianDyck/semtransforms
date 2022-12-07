@@ -159,6 +159,7 @@ class FindNodes:
             logging.warning("Unhandled type: " + result.__class__)
             return []
         except Exception:
+            raise
             return []
 
     def _all_transforms(self, ast: Node, parents: List[Node], context: Optional[ContextVisitor], child_index: int) -> \
@@ -237,6 +238,12 @@ class FindNodes:
 
     def has_jumps(self, node: Node) -> bool:
         return self.has_node(node, (c_ast.Label, c_ast.Goto))
+
+    def has_struct_ref(self, node: Node) -> bool:
+        return self.has_node(node, (c_ast.StructRef,))
+
+    def has_func_calls(self, node : Node) -> bool:
+        return self.has_node(node, (c_ast.FuncCall,))
 
     @cache
     def has_node(self, node: Node, true=(), false=()):

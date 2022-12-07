@@ -8,7 +8,7 @@ from pycparser.c_ast import *
 from semtransforms.util import NoNode
 from semtransforms.util.types import typecast
 
-_beginnings = "_abcdefghijklmnopqrstuvwkyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_beginnings = "abcdefghijklmnopqrstuvwkyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _letters = _beginnings + "0123456789"
 
 
@@ -30,9 +30,18 @@ def next_identifier(name: str) -> str:
         if index < len(letters) - 1:
             break
     result = "".join(reversed(result))
-    if result == "_" * len(result):
-        result += "_"
+    #if result == "_" * len(result):
+    #    result += "_"
     return result
+
+
+def is_generated_identifier(name: str, prefix : str = "", length : int = 8) -> bool:
+    """Test if a given identifier is a generated one"""
+    if not name.startswith(prefix): return False
+    name = name[len(prefix):]
+    if len(name) != length: return False
+    
+    return all(c in set(_letters) for c in name)
 
 
 def decl_type(node: Node) -> str:
@@ -131,30 +140,33 @@ class ContextVisitor:
                 if init:
                     del self.levels[-1]
                 del self.levels[-1]
-            case FuncDef(decl=Decl(name=name, type=type) as decl, body=body):
+            case FuncDef(decl=Decl(name=name, type=func_type) as decl, body=body):
                 # Function definition are always global
                 self.globals.add(name)
 
                 # This a scope with parameters as variables, a new ContextLevel has to be temporarily created
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
-                self._build_context(type)
+                self._build_context(func_type)
                 self._visit(decl, parents, 0)
                 if name in self.levels[-2].future.default:
                     self.levels[-2].past.default[name] = self.levels[-2].future.default[name]
                     del self.levels[-2].future.default[name]
                 self._visit(body, parents, 1)
                 del self.levels[-1]
-            case Typedef(name=name, type=type):
+            case Typedef(name=name, type=def_type):
                 # Type definition are always global
                 self.globals.add(name)
 
                 # a typedef is declared and has to be added to the past
                 self.visit_node(self, current, parents, index)
-                self.levels[-1].past.default[name] = self._value(type.type if isinstance(type, TypeDecl) else type)
+                self.levels[-1].past.default[name] = self._value(def_type.type if isinstance(def_type, TypeDecl) else def_type)
                 del self.levels[-1].future.default[name]
             case _:
                 # default: visit node and childs
+                if isinstance(current, Decl) and isinstance(current.type, FuncDecl):
+                    self.func_defs[current.name] = current
+
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
                 i = 0
@@ -248,7 +260,7 @@ class ContextVisitor:
             case _:
                 return node
 
-    def free_name(self, type="default"):
+    def free_name(self, type="default", prefix = ""):
         """creates a free name which can be inserted into a program"""
         if type == "label":
             all_keys = self.labels
@@ -256,9 +268,9 @@ class ContextVisitor:
             all_keys = set([key for level in self.levels for key in getattr(level.past, type).keys()])
             all_keys |= set([key for key in getattr(self.levels[-1].future, type).keys()])
         name = random_identifier()
-        while name in all_keys:
+        while prefix + name in all_keys:
             name = next_identifier(name)
-        return name
+        return prefix + name
 
     def basic_type(self, node: Node) -> typing.Optional[str]:
         """returns the type of a node only if it always is the same IdentifierType"""
