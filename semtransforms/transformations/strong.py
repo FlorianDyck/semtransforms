@@ -53,9 +53,21 @@ def add_if_rand(self, parents: List[Node], stmts: Content, context: ContextVisit
 def deepen_while(finder: FindStatements, parents: List[Node], stmts: Content, context: ContextVisitor):
     match stmts[0]:
         case While(cond=cond, stmt=stmt) as w if not (finder.has_side_effects(cond) or finder.has_break(stmt)):
-            if finder.has_func_calls(cond): _restructure_loop_with_func_call_condition(context, stmts)
+            if not finder.has_func_calls(cond):
+                return lambda: setattr(w, "stmt", While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt))
+            
+            def transform():
+                _restructure_loop_with_func_call_condition(context, stmts)
+                
+                *w.stmt.block_items, restructure_assign = w.stmt.block_items
+                w.stmt = Compound(block_items = [
+                    While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt),
+                    restructure_assign
+                ])
 
-            return lambda: setattr(w, "stmt", While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt))
+
+            return transform
+
 
 
 @find_statements(length=1, modifiable_length=False)

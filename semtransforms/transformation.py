@@ -159,7 +159,6 @@ class FindNodes:
             logging.warning("Unhandled type: " + result.__class__)
             return []
         except Exception:
-            raise
             return []
 
     def _all_transforms(self, ast: Node, parents: List[Node], context: Optional[ContextVisitor], child_index: int) -> \
