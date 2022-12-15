@@ -59,12 +59,14 @@ def deepen_while(finder: FindStatements, parents: List[Node], stmts: Content, co
             def transform():
                 _restructure_loop_with_func_call_condition(context, stmts)
                 
-                *w.stmt.block_items, restructure_assign = w.stmt.block_items
-                w.stmt = Compound(block_items = [
-                    While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt),
-                    restructure_assign
-                ])
-
+                if isinstance(w.stmt, c_ast.Compound):
+                    *w.stmt.block_items, restructure_assign = w.stmt.block_items
+                    w.stmt = Compound(block_items = [
+                        While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt),
+                        restructure_assign
+                    ])
+                else:
+                    w.stmt = While(BinaryOp("&", verifier.nondet_call("int"), deepcopy(cond)), stmt)
 
             return transform
 
