@@ -8,7 +8,7 @@ from pycparser.c_ast import *
 from semtransforms.util import NoNode
 from semtransforms.util.types import typecast
 
-_beginnings = "_abcdefghijklmnopqrstuvwkyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_beginnings = "abcdefghijklmnopqrstuvwkyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _letters = _beginnings + "0123456789"
 
 
@@ -30,9 +30,18 @@ def next_identifier(name: str) -> str:
         if index < len(letters) - 1:
             break
     result = "".join(reversed(result))
-    if result == "_" * len(result):
-        result += "_"
+    #if result == "_" * len(result):
+    #    result += "_"
     return result
+
+
+def is_generated_identifier(name: str, prefix : str = "", length : int = 8) -> bool:
+    """Test if a given identifier is a generated one"""
+    if not name.startswith(prefix): return False
+    name = name[len(prefix):]
+    if len(name) != length: return False
+    
+    return all(c in set(_letters) for c in name)
 
 
 def decl_type(node: Node) -> str:
@@ -71,6 +80,8 @@ class ContextLevel:
 
 
 def _no_decl_type(type: Node):
+    if type is None             : return "UNDEFINED"
+    if not hasattr(type, "type"): return "UNDEFINED"
     return type.type.type if isinstance(type.type, TypeDecl) else type.type
 
 
@@ -82,10 +93,13 @@ class ContextVisitor:
         self._types = {}
         self.labels = {}
         self.func_defs = {}
+
+        self.globals = set()
+
         self.levels = [ContextLevel(node)]
         # initialize functions which are defined by the compiler
-        self.levels[0].past.default['__PRETTY_FUNCTION__'] = Decl('__PRETTY_FUNCTION__', [], [], [], [],
-                  PtrDecl([], TypeDecl('__PRETTY_FUNCTION__', [], None, IdentifierType(['char']))), None, None)
+        self.levels[0].past.default['__PRETTY_FUNCTION__'] = Decl('__PRETTY_FUNCTION__', [], [], [], [], [],
+                  PtrDecl([], TypeDecl('__PRETTY_FUNCTION__', [], None, IdentifierType(['char']), [])), None, None)
         self._build_context(node)
         self.visit_node = visit_node
         # run
@@ -108,12 +122,16 @@ class ContextVisitor:
                 del self.levels[-1]
             case For(init=init, cond=cond, next=next, stmt=stmt):
                 # This is 2 scopes, new Contextlevel have to be temporarily created
-                self.visit_node(self, current, parents, index)
-                parents = [] + parents + [current]
+                i = 0
                 if init:
                     self._build_context(init)
-                i = 0
-                for child in init, cond, next:
+                    self._visit(init, parents + [current], i)
+                    i += 1
+
+                self.visit_node(self, current, parents, index)
+                parents = [] + parents + [current]
+                
+                for child in cond, next:
                     if child:
                         self._visit(child, parents, i)
                     i += 1
@@ -122,24 +140,33 @@ class ContextVisitor:
                 if init:
                     del self.levels[-1]
                 del self.levels[-1]
-            case FuncDef(decl=Decl(name=name, type=type) as decl, body=body):
+            case FuncDef(decl=Decl(name=name, type=func_type) as decl, body=body):
+                # Function definition are always global
+                self.globals.add(name)
+
                 # This a scope with parameters as variables, a new ContextLevel has to be temporarily created
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
-                self._build_context(type)
+                self._build_context(func_type)
                 self._visit(decl, parents, 0)
                 if name in self.levels[-2].future.default:
                     self.levels[-2].past.default[name] = self.levels[-2].future.default[name]
                     del self.levels[-2].future.default[name]
                 self._visit(body, parents, 1)
                 del self.levels[-1]
-            case Typedef(name=name, type=type):
+            case Typedef(name=name, type=def_type):
+                # Type definition are always global
+                self.globals.add(name)
+
                 # a typedef is declared and has to be added to the past
                 self.visit_node(self, current, parents, index)
-                self.levels[-1].past.default[name] = self._value(type.type if isinstance(type, TypeDecl) else type)
+                self.levels[-1].past.default[name] = self._value(def_type.type if isinstance(def_type, TypeDecl) else def_type)
                 del self.levels[-1].future.default[name]
             case _:
                 # default: visit node and childs
+                if isinstance(current, Decl) and isinstance(current.type, FuncDecl):
+                    self.func_defs[current.name] = current
+
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
                 i = 0
@@ -149,6 +176,9 @@ class ContextVisitor:
                 # check if a identifier is declared and has to be added to the past
                 name, future = self._name_and_map(current, self.levels[-1].future)
                 if name:
+                    if not any(isinstance(p, (FuncDecl, FuncDef, Compound)) for p in parents):
+                        self.globals.add(name)
+                    
                     _, past = self._name_and_map(current, self.levels[-1].past)
                     if name in future:
                         past[name] = future[name]
@@ -156,6 +186,7 @@ class ContextVisitor:
 
     def _build_context(self, current: Node, first=True):
         """creates a ContextLevel with all identifiers directly in this scope in the future"""
+        assert current is not None
         if current.__class__ in (Compound, While, DoWhile, If, Switch, For) and not first:
             self.labels = self._build_labels(current)
             return  # stop because a new scope is created
@@ -229,7 +260,7 @@ class ContextVisitor:
             case _:
                 return node
 
-    def free_name(self, type="default"):
+    def free_name(self, type="default", prefix = ""):
         """creates a free name which can be inserted into a program"""
         if type == "label":
             all_keys = self.labels
@@ -237,9 +268,9 @@ class ContextVisitor:
             all_keys = set([key for level in self.levels for key in getattr(level.past, type).keys()])
             all_keys |= set([key for key in getattr(self.levels[-1].future, type).keys()])
         name = random_identifier()
-        while name in all_keys:
+        while prefix + name in all_keys:
             name = next_identifier(name)
-        return name
+        return prefix + name
 
     def basic_type(self, node: Node) -> typing.Optional[str]:
         """returns the type of a node only if it always is the same IdentifierType"""
@@ -265,6 +296,17 @@ class ContextVisitor:
 
     def _type(self, node: Node, name: str) -> typing.Set[Node]:
         """returns the possible types of a node"""
+        def _extract_types(decl, field_name):
+            decl_value = self._value(decl)
+            if not hasattr(decl_value, 'type'): return None
+
+            decl_type = decl_value.type
+            if isinstance(decl_type, TypeDecl):
+                return None
+            
+            decls = decl_type.decls
+            return [d for d in decls if d.name == field_name][0]
+
         match node:
             # may only be used if there is no declaration between the current statement and node
             case ID(name=name):
@@ -272,10 +314,10 @@ class ContextVisitor:
             case ArrayRef(name=expr) | FuncCall(name=expr):
                 return {_no_decl_type(t) for t in self.type(expr)}
             case StructRef(name=var, type="->", field=ID(name=field_name)):
-                return {_no_decl_type([d for d in self._value(_no_decl_type(decl)).type.decls if d.name == field_name][0])
+                return {_no_decl_type(_extract_types(decl, field_name))
                         for decl in self.type(var)}
             case StructRef(name=var, field=ID(name=field_name)):
-                return {_no_decl_type([d for d in self._value(decl).type.decls if d.name == field_name][0])
+                return {_no_decl_type(_extract_types(decl, field_name))
                         for decl in self.type(var)}
 
             case Cast(to_type=type):
@@ -288,7 +330,7 @@ class ContextVisitor:
                 return self.type(last, name)
 
             case UnaryOp(op="&", expr=expr):
-                return {PtrDecl([], TypeDecl(name, [], None, t)) for t in self.type(expr, name)}
+                return {PtrDecl([], TypeDecl(name, [], None, t, [])) for t in self.type(expr, name)}
             case UnaryOp(op="*", expr=expr):
                 type = self.type(expr, name)
                 if len(type) == 1 and {t.__class__ for t in type} == {PtrDecl}:
@@ -311,6 +353,7 @@ class ContextVisitor:
         """builds types possible by combining 2 type possibilities"""
         result = set()
         for types in itertools.product(self.type(node1, name), self.type(node2, name)):
+            if any(t == "UNDEFINED" for t in types): continue
             result |= typecast(types[0].names[0], types[1].names[0])
         return result
 

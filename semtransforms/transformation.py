@@ -1,3 +1,4 @@
+import re
 import logging
 import math
 import typing
@@ -5,10 +6,30 @@ from functools import cache
 from typing import List, Union, Callable, Optional
 
 from pycparser import c_ast
-from pycparser.c_ast import Node
+from pycparser.c_ast import Node, FuncDef
 
 from semtransforms.context import ContextVisitor, decl_type
 from semtransforms.util import NoNode, fnn
+
+
+FUNCTION_BLACKLIST = [
+    "reach_error",
+    "abort",
+    "assume_abort_if_not",
+    re.compile(r"__VERIFIER_(.*)"),
+]
+
+def edit_allowed(function_name):
+    for name_or_pattern in FUNCTION_BLACKLIST:
+        if function_name == name_or_pattern        : return False
+
+        try:
+            if name_or_pattern.match(function_name): return False
+        except AttributeError:
+            continue
+
+    return True
+
 
 
 class Content:
@@ -73,6 +94,9 @@ class SingleNode(Content):
 
     def replace(self, content: Node):
         setattr(self.parent, self.attr_name, content)
+
+    def __getattr__(self, name):
+        return getattr(self.content()[0], name)
 
     def __iter__(self):
         yield getattr(self.parent, self.attr_name)
@@ -142,21 +166,39 @@ class FindNodes:
         """finds for one child all valid transforms"""
         raise NotImplementedError("Not implemented in baseclass")
 
+    def _allow_transform(self, ast: Node, parents: List[Node], context: Optional[ContextVisitor], child_index):
+        # We only allow transforms that are not inside black listed functions
+        
+        for parent_function_definition in filter(lambda x: isinstance(x, FuncDef), parents):
+            name = parent_function_definition.decl.name
+            if not edit_allowed(name): return False
+
+        return True
+
+    def _all_allowed_transforms(self, ast: Node, parents: List[Node], context: Optional[ContextVisitor], child_index: int) -> \
+    List[Callable]:
+        """finds for one child all allowed transforms"""
+
+        if not self._allow_transform(ast, parents, context, child_index): return []
+        return self._all_transforms(ast, parents, context, child_index)
+
+
     def all_transforms(self, ast: Node, parents: List[Node] = [], index: int = 0) -> List[Callable]:
         """iterates through all childs and finds where the AST can be transformed"""
         is_root = not parents
         if is_root:
             self.has_side_effects.cache_clear()
             self.has_node.cache_clear()
+
         if self.context:
             result = []
 
             def visit_node(visitor: ContextVisitor, current: Node, parents: typing.List[Node], index):
-                result.extend(self._all_transforms(current, parents, visitor, index))
+                result.extend(self._all_allowed_transforms(current, parents, visitor, index))
 
             ContextVisitor(ast, visit_node)
         else:
-            result = self._all_transforms(ast, parents, None, index)
+            result = self._all_allowed_transforms(ast, parents, None, index)
             parents = [] + parents + [ast]
             i = 0
             for c in ast:
@@ -195,6 +237,12 @@ class FindNodes:
 
     def has_jumps(self, node: Node) -> bool:
         return self.has_node(node, (c_ast.Label, c_ast.Goto))
+
+    def has_struct_ref(self, node: Node) -> bool:
+        return self.has_node(node, (c_ast.StructRef,))
+
+    def has_func_calls(self, node : Node) -> bool:
+        return self.has_node(node, (c_ast.FuncCall,))
 
     @cache
     def has_node(self, node: Node, true=(), false=()):
@@ -258,8 +306,9 @@ class FindStatements(FindNodes):
                         result += self._transforms(parents, Nodes(all, child_index, end), context)
                 elif child_index == 0:
                     result += self._transforms(parents, Nodes(all, 0, len(all)), context)
+    
         match ast:
-            case c_ast.DoWhile(), c_ast.For(), c_ast.While():
+            case c_ast.DoWhile() | c_ast.For() | c_ast.While():
                 return result + self.names_if_modifiable(parents, ast, context, "stmt")
             case c_ast.If(iffalse=None):
                 return result + self.names_if_modifiable(parents, ast, context, "iftrue")
