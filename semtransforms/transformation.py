@@ -222,6 +222,11 @@ class FindNodes:
         match node:
             case c_ast.Assignment():
                 return True
+
+            # Function might have a side effect
+            case c_ast.FuncCall():
+                return True
+
             case c_ast.UnaryOp(op=op, expr=expr):
                 return op in "p++p--" or self.has_side_effects(expr)
         for child in node:
