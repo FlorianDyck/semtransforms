@@ -149,6 +149,38 @@ MIXED_TRANSFORMS = {
 
         # Number of runs
         number = (1,)
+    ),
+
+     # SPIN configs
+    "spin_nopointer": _build(
+
+        # Top level transformations
+        
+        # Loop deepening
+        deepen_while,
+
+        # IF insertion
+        if0error,
+        add_if1,
+
+        # Array introduction
+        to_array,
+
+        # Simple helper transformations
+        for2while,
+        break2goto,
+        arithmetic_nothing,
+        logic_nothing,
+        flip_if,
+        extract_if,
+        expand_assignment,
+        swap_binary,
+        extract_unary,
+        add_nondet,
+        fast_compound,
+
+        # Number of runs
+        number = (1,)
     )
 }
 
@@ -172,7 +204,11 @@ def transform(program, transformer, *number):
         splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
     else:
         splits = [1]
-    return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: transformer.transform(ast, split)) for split in splits]))
+
+    def part_fn(split):
+        return lambda ast: transformer.transform(ast, split)
+
+    return support_extensions(program, lambda x: on_ast(x, *[part_fn(split) for split in splits]))
 
 def trace(program, trace, *number):
     parts = trace.split('\n')
