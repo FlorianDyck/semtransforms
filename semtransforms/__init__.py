@@ -28,27 +28,162 @@ from semtransforms.transformations import *
 SINGLE_TRANSFORMS = [t for t in FindNodes.all.values() if t not in (add_compound,)]
 
 
+class _TransformerFN:
+
+    def __init__(self, transforms, numbers):
+        self._transformer = Transformer(*transforms)
+        self._numbers     = numbers
+    
+    def __call__(self, source_code, n = None):
+        if n is None: n = self._numbers
+        if isinstance(n, int): n = (n,)
+        return transform(source_code, self._transformer, *n)
+
+
 def _build(*trans, number=(10,)):
-    return lambda x, n=number: transform(x, Transformer(*trans), *n)
+    return _TransformerFN(trans, number)
 
 
 def _build_except(*trans, number=(10,)):
-    return lambda x, n=number: transform(x, Transformer(*[t for t in SINGLE_TRANSFORMS if t not in trans]), *n)
+    return _TransformerFN([t for t in SINGLE_TRANSFORMS if t not in trans], number)
 
 
 MIXED_TRANSFORMS = {
     "identity": lambda x: (x, ""),
-    "random": _build_except(number=1),
-    "mixed": _build_except(number=50),
-    "no_recursion": _build_except(to_recursive, number=50),
-    "no_pointers": _build_except(re_ref, re_ref_no_methods, to_method, insert_method, to_recursive, number=50),
-    "no_fpointers": _build_except(re_ref, to_method, insert_method, to_recursive, number=50),
+    "random": _build_except(number=(1,)),
+    "mixed": _build_except(number=(50,)),
+    "no_recursion": _build_except(to_recursive, number=(50,)),
+    "no_pointers": _build_except(re_ref, re_ref_no_methods, to_method, insert_method, to_recursive, number=(50,)),
+    "no_fpointers": _build_except(re_ref, to_method, insert_method, to_recursive, number=(50,)),
     "arrays": _build(to_array),
     "re_ref": _build(re_ref),
     "loops": _build(deepen_while, for2while, break2goto),
     "methods": _build(add_compound, to_method, insert_method),
     "recursive": _build(for2while, to_recursive),
+
+    # Simple transformations
+    "inline_methods"   : _build(insert_method),
+    "to_methods": _build(to_method),
+    "deepen_while": _build(deepen_while, for2while),
+
+    # SPIN configs
+    "spin_config": _build(
+
+        # Top level transformations
+        
+        # Loop deepening
+        deepen_while,
+
+        # IF insertion
+        if0error,
+        add_if1,
+
+        # Pointer introduction
+        re_ref_locals,
+
+        # Array introduction
+        to_array,
+
+        # Function encapsulation
+        to_method,
+
+        # Function inlining
+        insert_method,
+
+        # Loop to recursion
+        to_recursive,
+
+        # Simple helper transformations
+        for2while,
+        break2goto,
+        arithmetic_nothing,
+        logic_nothing,
+        flip_if,
+        extract_if,
+        expand_assignment,
+        swap_binary,
+        extract_unary,
+        add_nondet,
+        fast_compound,
+
+        # Number of runs
+        number = (1,)
+    ),
+
+     # SPIN configs
+    "spin_norec": _build(
+
+        # Top level transformations
+        
+        # Loop deepening
+        deepen_while,
+
+        # IF insertion
+        if0error,
+        add_if1,
+
+        # Pointer introduction
+        re_ref_locals,
+
+        # Array introduction
+        to_array,
+
+        # Function encapsulation
+        to_method,
+
+        # Function inlining
+        insert_method,
+
+        # Simple helper transformations
+        for2while,
+        break2goto,
+        arithmetic_nothing,
+        logic_nothing,
+        flip_if,
+        extract_if,
+        expand_assignment,
+        swap_binary,
+        extract_unary,
+        add_nondet,
+        fast_compound,
+
+        # Number of runs
+        number = (1,)
+    ),
+
+     # SPIN configs
+    "spin_nopointer": _build(
+
+        # Top level transformations
+        
+        # Loop deepening
+        deepen_while,
+
+        # IF insertion
+        if0error,
+        add_if1,
+
+        # Array introduction
+        to_array,
+
+        # Simple helper transformations
+        for2while,
+        break2goto,
+        arithmetic_nothing,
+        logic_nothing,
+        flip_if,
+        extract_if,
+        expand_assignment,
+        swap_binary,
+        extract_unary,
+        add_nondet,
+        fast_compound,
+
+        # Number of runs
+        number = (1,)
+    )
 }
+
 AVAILABLE_TRANSFORMS = list(MIXED_TRANSFORMS.keys())  # + list(FindNodes.all.keys())
 
 
@@ -65,12 +200,15 @@ def all_transformer():
 
 
 def transform(program, transformer, *number):
-    splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
-    def part(split):
+    if len(number) >= 1:
+        splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
+    else:
+        splits = [1]
+
+    def part_fn(split):
         return lambda ast: transformer.transform(ast, split)
 
-    return support_extensions(program, lambda x: on_ast(x, *[part(split) for split in splits]))
-
+    return support_extensions(program, lambda x: on_ast(x, *[part_fn(split) for split in splits]))
 
 def trace(program, trace, *number):
     parts = trace.split('\n')
@@ -93,9 +231,11 @@ def on_ast(program, *operations):
     ast = util.parse(program)
     add_empty_lists(ast)
     results = []
+
     for op in operations:
         result = op(ast)
         results.append((util.generate(ast), result))
+
     return results
 
 

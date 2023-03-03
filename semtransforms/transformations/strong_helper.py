@@ -26,6 +26,7 @@ def add_compound(self, parents: List[Node], stmts: Content, context: ContextVisi
 @find_statements(modifiable_length=False, min_length=-1)
 def fast_compound(self, parents: List[Node], stmts: Content, context: ContextVisitor):
     if not isinstance(stmts, Nodes):
+        if isinstance(stmts[0], Compound) and len(stmts[0].block_items) == 0: return
         return lambda: stmts.replace(Compound(stmts.content()))
 
     possibilities = 0  # total number of possibilities
@@ -67,7 +68,9 @@ def fast_compound(self, parents: List[Node], stmts: Content, context: ContextVis
             # thus, this compound should go to the end and not overlap with a possibility of the last block
             start = index - possibilities
             end = len(stmts.nodes)
-        stmts.nodes[start:end] = [Compound(stmts.nodes[start:end])]
+        
+        if start < end:
+            stmts.nodes[start:end] = [Compound(stmts.nodes[start:end])]
 
     def call_transform(index):  # this is in a function so that the index is not updated
         return lambda: transform(index)
@@ -79,7 +82,7 @@ def fast_compound(self, parents: List[Node], stmts: Content, context: ContextVis
 def extract_if(self, parents: List[Node], stmts: Content, context: ContextVisitor):
     match stmts[0]:
         case If() as part:
-            name = context.free_name()
+            name = context.free_name(prefix = "var_")
             type = context.type(part.cond, name)
             if len(type) != 1:
                 return
@@ -120,9 +123,9 @@ def extract_unary(self, parents: List[Node], stmts: Content, context: ContextVis
         case c_ast.Assignment(rvalue=c_ast.UnaryOp(op=op, expr=expr)):
             attr_name = "rvalue"
     if attr_name and op in "&*+-!~":
-        if op == "&" and isinstance(context.type(stmts[0].expr), FuncDecl):
+        if op == "&" and isinstance(context.type(getattr(stmts[0], attr_name)), FuncDecl):
             return
-        name = context.free_name()
+        name = context.free_name(prefix = "var_")
         type = context.type(expr, name)
         if len(type) == 1:
             def transform():

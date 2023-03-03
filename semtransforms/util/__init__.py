@@ -27,12 +27,14 @@ def generate(node: Node, generator=c_generator.CGenerator()) -> str:
 
 
 def simple_declaration(name: str, type: Node, init: Node):
-    return c_ast.Decl(name, [], [], [], [], c_ast.TypeDecl(name, [], None, type), init, None)
+    return c_ast.Decl(name, [], [], [], [], [], c_ast.TypeDecl(name, [], None, type, []), init, None)
 
 
 def identifier_declaration(name: str, type: str, init: Node):
     return simple_declaration(name, c_ast.IdentifierType([type]), init)
 
+def assignment_expression(name: str, init: Node):
+    return c_ast.Assignment(op = "=", lvalue = c_ast.ID(name = name), rvalue = init)
 
 def equals(n1, n2) -> bool:
     """recursively checks whether to nodes are the same"""
@@ -40,17 +42,18 @@ def equals(n1, n2) -> bool:
         return False
     if not issubclass(n1.__class__, Node):
         return n1 == n2
+
+    if n1.__class__ == list:
+        for i1, i2 in zip(n1, n2):
+            if not equals(i1, i2):
+                return False
+
     for name in n1.__slots__:
         if name == "coord":
             continue
         a1, a2 = getattr(n1, name), getattr(n2, name)
-        if a1.__class__ is list:
-            for i1, i2 in zip(a1, a2):
-                if not equals(i1, i2):
-                    return False
-        else:
-            if not equals(a1, a2):
-                return False
+        if not equals(a1, a2): return False
+
     return True
 
 
@@ -88,13 +91,14 @@ def duplicateable(node: Node, ignore_case=False):
 
 
 def has_variable_array_size(node: Node):
+    if node is None: return False
     return (isinstance(node, c_ast.ArrayDecl) and not isinstance(node.dim, c_ast.Constant)) \
            or any(has_variable_array_size(child) for child in node)
 
 
 def can_rename(node: Node):
-    return not (isinstance(node, c_ast.ArrayDecl), isinstance(node, c_ast.FuncDecl))\
-           and (not (hasattr(node, "type") and can_rename(node.type)))
+    return not (isinstance(node, c_ast.ArrayDecl) or isinstance(node, c_ast.FuncDecl))\
+           and (not hasattr(node, "type") or can_rename(node.type))
 
 
 def rename(node: Node, name: str):

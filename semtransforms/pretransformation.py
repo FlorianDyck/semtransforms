@@ -55,34 +55,35 @@ def support_extensions(code: str, func):
     code = remove_comments(code)
     replacings = []  # pattern-string combinations which later must be replaced
 
-    code = code.replace('__extension__', '')
+    # Parser now supports this language constructs
+    # code = code.replace('__extension__', '')
 
-    for keyword in ("inline", "restrict"):
-        if f"__{keyword} " in code and not re.search(f"(?<!__){keyword}", code):
-            code = code.replace(f"__{keyword}", keyword)
-            replacings += [(keyword, f"__{keyword}")]
+    #for keyword in ("inline", "restrict"):
+    #    if f"__{keyword} " in code and not re.search(f"(?<!__){keyword}", code):
+    #        code = code.replace(f"__{keyword}", keyword)
+    #        replacings += [(keyword, f"__{keyword}")]
 
-    any = "[^{};]*"
-    nested_brackets = '[^()]*' + (r'(\([^()]*' * 100) + (r'\))?' * 100)
-    attr_or_const = rf"(__attribute__ *\(\({nested_brackets}\)\)|__const )"
-    while r := re.search(f"extern{any}{attr_or_const}{any};", code):
-        replacings += [(regex(re.sub(attr_or_const, "", r.group())), r.group())]
-        code = re.sub(f"extern{any}{attr_or_const}{any};", re.sub(attr_or_const, " ", r.group()), code, 1)
+    #any = "[^{};]*"
+    #nested_brackets = '[^()]*' + (r'(\([^()]*' * 100) + (r'\))?' * 100)
+    #attr_or_const = rf"(__attribute__ *\(\({nested_brackets}\)\)|__const )"
+    #while r := re.search(f"extern{any}{attr_or_const}{any};", code):
+    #    replacings += [(regex(re.sub(attr_or_const, "", r.group())), r.group())]
+    #    code = re.sub(f"extern{any}{attr_or_const}{any};", re.sub(attr_or_const, " ", r.group()), code, 1)
 
-    while r := re.search(rf"__attribute__ *\(\({nested_brackets}\)\)", code):
-        code = code[:r.start()] + code[r.end():]
+    #while r := re.search(rf"__attribute__ *\(\({nested_brackets}\)\)", code):
+    #    code = code[:r.start()] + code[r.end():]
 
-    for keyword in '__signed__', '__const', '__inline__', '__inline':
-        code = code.replace(keyword, keyword.replace('_', ''))
+    #for keyword in '__signed__', '__const', '__inline__', '__inline':
+    #    code = code.replace(keyword, keyword.replace('_', ''))
 
     # execute func
     result = func(code)
 
-    for i in range(len(result)):
-        code, trace = result[i]
-        # reconstruct incompatible code
-        for pattern, replacing in replacings:
-            code = re.sub(pattern, replacing, code)
-        result[i:i+1] = [(code, trace)]
+    #for i in range(len(result)):
+    #    code, trace = result[i]
+    #    # reconstruct incompatible code
+    #    for pattern, replacing in replacings:
+    #        code = re.sub(pattern, replacing, code)
+    #    result[i:i+1] = [(code, trace)]
 
     return result
