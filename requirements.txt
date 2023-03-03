@@ -1,4 +1,4 @@
-pycparser~=2.21
+git+https://github.com/cedricrupb/pycparser.git@master
 pathos>=0.3.0
 tqdm>=4.64.1
 PyYAML>=6.0

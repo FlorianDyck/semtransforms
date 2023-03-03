@@ -16,7 +16,18 @@ SemTransform implement several reachability preserving transformations. To trans
 ```bash
 $ python run_transformations.py [input_files] -o [output_dir] --num_transforms 100 --spin_config [--parallel]
 ```
-The script applies one of several transformation randomly to the given input files. Transformations are applied one after another (up to certain limit; here 100 transformations). If you transform multiple files, it can be beneficial to run the transformation in parallel (via the `--parallel` option).
+The script applies one of several transformation randomly to the given input files. Transformations are applied one after another (up to certain limit; here 100 transformations). The input files may contain .c, .i and .set files. If you transform multiple files, it can be beneficial to run the transformation in parallel (via the `--parallel` option).
+
+The following scripts generated the examples.
+They and their input files are a minimal example for how a benchmark might look like.
+
+```bash
+$ python run_transformations.py examples/in/main.c examples/in/main.i -o examples/out/source --num_transforms 100 --spin_config
+```
+
+```bash
+$ python run_transformations.py examples/in/main.set -o examples/out/set --num_transforms 100 --spin_config
+```
 
 SemTransforms support a number of predefined transformation configurations. You can get a full list by running:
 ```bash
