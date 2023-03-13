@@ -2,6 +2,8 @@ import os
 import shutil
 import sys
 import argparse
+
+import pycparser.plyparser
 import yaml
 import random
 import traceback
@@ -23,6 +25,8 @@ class FileTransformer:
         self._num_transforms = config.num_transforms
         self._recursion_limit = config.recursion_limit
         self._generate_benchmark = config.generate_benchmark
+        self._prefix = config.prefix
+        self._suffix = config.suffix
 
         self._transforms = [transform_by_name(name) for name in TRANSFORM_NAMES if getattr(config, name, False)]
 
@@ -45,6 +49,13 @@ class FileTransformer:
 
         try:
             transforms = transform(source_code, n = num_transforms)
+        except pycparser.plyparser.ParseError as pe:
+            print(f"\ncould not parse '{file_name}' because of {pe}. See statistics for detailed info.")
+            return [{
+                "source_file": file_name,
+                "exception"  : traceback.format_exc(),
+                "walltime"   : time() - start_time,
+            }]
         except Exception:
             traceback.print_exc()
             return [{
@@ -59,22 +70,20 @@ class FileTransformer:
             output_path = os.path.join(self._output_dir, os.path.basename(file_name))
             if self._generate_benchmark:
                 output_path = os.path.join(self._output_dir,
-                                           os.path.basename(os.path.dirname(file_name)) + '-recursive',
+                                           self._prefix + os.path.basename(os.path.dirname(file_name)) + self._suffix,
                                            os.path.basename(file_name))
 
             input_path, _ = os.path.splitext(file_name)
             output_path, ext = os.path.splitext(output_path)
-            output_path += '-recursive'
+            output_path = (output_path.removesuffix(os.path.basename(output_path)) +
+                           self._prefix + os.path.basename(output_path) + self._suffix)
             if True or len(transforms) > 0:
                 output_path += f"-{i}"
 
             if self._generate_benchmark:
                 with open(input_path + '.yml', 'r') as r:
                     yml = yaml.safe_load(r)
-                print()
-                print(yml)
                 yml['input_files'] = os.path.basename(output_path) + ext
-                print(yml)
                 with open(output_path + '.yml', 'w+') as w:
                     yaml.dump(yml, w)
             
@@ -145,6 +154,8 @@ def prepare_parser():
     parser.add_argument("-o", "--output_dir", type = str, required = True)
     parser.add_argument("--num_transforms", type = int, default = -1)
     parser.add_argument("--recursion_limit", type = int, default = 5000)
+    parser.add_argument("--prefix", type = str, default = '')
+    parser.add_argument("--suffix", type = str, default = '')
     parser.add_argument("--no_dedup", action = "store_true")
 
     for transform_name in TRANSFORM_NAMES:
@@ -177,13 +188,21 @@ def main(*args):
     if args.generate_benchmark:
         folders = {os.path.dirname(file) for file in input_files}
         for folder in folders:
-            folder = os.path.join(args.output_dir, folder + '-recursive')
-            if not os.path.exists(folder):
-                os.makedirs(folder)
+            folder_out = os.path.join(args.output_dir, args.prefix + os.path.basename(folder) + args.suffix)
+            if not os.path.exists(folder_out):
+                os.makedirs(folder_out)
+            for file in os.listdir(folder):
+                if 'license' in os.path.basename(file).lower():
+                    shutil.copy(os.path.join(folder, file), os.path.join(folder_out, file))
+                if 'readme' in os.path.basename(file).lower():
+                    with open(os.path.join(folder, file), 'r') as r:
+                        readme = r.read()
+                    with open(os.path.join(folder_out, file), 'w+') as w:
+                        w.write(f'{readme}\n\ntransformed with semtransforms\n'
+                                f'https://github.com/Flo0112358/semtransforms')
 
     # Run mapreduce
     mapreduce(input_files, transformer, reducer_fn = args.output_dir, parallel = args.parallel, report = True)
-
 
 
 if __name__ == '__main__':
