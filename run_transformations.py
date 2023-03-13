@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import argparse
 import yaml
@@ -10,8 +11,7 @@ from time import time
 
 from mapreduce import mapreduce
 
-from semtransforms import AVAILABLE_TRANSFORMS
-from semtransforms import transform_by_name
+from semtransforms import TRANSFORM_NAMES, transform_by_name
 
 
 # Transformer ---------------------------------------------------------------------------
@@ -19,16 +19,14 @@ from semtransforms import transform_by_name
 class FileTransformer:
 
     def __init__(self, config):
-        self._transforms = []
         self._output_dir = config.output_dir
         self._num_transforms = config.num_transforms
         self._recursion_limit = config.recursion_limit
+        self._generate_benchmark = config.generate_benchmark
 
-        for transform_name in AVAILABLE_TRANSFORMS:
-            if getattr(config, transform_name, False):
-                self._transforms.append(transform_by_name(transform_name))
+        self._transforms = [transform_by_name(name) for name in TRANSFORM_NAMES if getattr(config, name, False)]
 
-        assert len(self._transforms) > 0, f"You have to select at least one transform from {AVAILABLE_TRANSFORMS}"
+        assert len(self._transforms) > 0, f"You have to select at least one transform from {TRANSFORM_NAMES}"
 
     def __call__(self, file_name):
         sys.setrecursionlimit(self._recursion_limit)
@@ -59,15 +57,31 @@ class FileTransformer:
         output_files = []
         for i, (transformed, trace) in enumerate(transforms):
             output_path = os.path.join(self._output_dir, os.path.basename(file_name))
+            if self._generate_benchmark:
+                output_path = os.path.join(self._output_dir,
+                                           os.path.basename(os.path.dirname(file_name)) + '-recursive',
+                                           os.path.basename(file_name))
+
+            input_path, _ = os.path.splitext(file_name)
+            output_path, ext = os.path.splitext(output_path)
+            output_path += '-recursive'
+            if True or len(transforms) > 0:
+                output_path += f"-{i}"
+
+            if self._generate_benchmark:
+                with open(input_path + '.yml', 'r') as r:
+                    yml = yaml.safe_load(r)
+                print()
+                print(yml)
+                yml['input_files'] = os.path.basename(output_path) + ext
+                print(yml)
+                with open(output_path + '.yml', 'w+') as w:
+                    yaml.dump(yml, w)
             
-            if i > 0:
-                output_path, ext = os.path.splitext(output_path)
-                output_path = output_path + f"-{i}" + ext
-            
-            with open(output_path, "w") as o:
+            with open(output_path + ext, "w") as o:
                 o.write(transformed)
             
-            output_files.append({"file_path": output_path, "trace": trace})
+            output_files.append({"file_path": output_path + ext, "trace": trace})
 
         return [{
             "source_file": file_name, 
@@ -133,17 +147,17 @@ def prepare_parser():
     parser.add_argument("--recursion_limit", type = int, default = 5000)
     parser.add_argument("--no_dedup", action = "store_true")
 
-    for transform_name in AVAILABLE_TRANSFORMS:
+    for transform_name in TRANSFORM_NAMES:
         parser.add_argument(f"--{transform_name}", action = "store_true")
 
     parser.add_argument("--parallel", action = "store_true")
+    parser.add_argument("--generate_benchmark", action = "store_true")
 
     return parser
 
 
-def main(argv = None):
-    if argv is None: argv = sys.argv
-    args = prepare_parser().parse_args(args = argv[1:])
+def main(*args):
+    args = prepare_parser().parse_args(args)
 
     print("Search for input files...")
 
@@ -155,15 +169,22 @@ def main(argv = None):
     # Gurantees that files of similar complexity are batched together
     input_files = sorted(input_files, key = lambda path: os.stat(path).st_size)
 
-    print(f"Found {len(input_files)} files...")
-    print("Start transformation...")
+    print(f"Found {len(input_files)} files...\n"
+          f"Start transformation...")
     
     transformer = FileTransformer(args)
-    
+
+    if args.generate_benchmark:
+        folders = {os.path.dirname(file) for file in input_files}
+        for folder in folders:
+            folder = os.path.join(args.output_dir, folder + '-recursive')
+            if not os.path.exists(folder):
+                os.makedirs(folder)
+
     # Run mapreduce
     mapreduce(input_files, transformer, reducer_fn = args.output_dir, parallel = args.parallel, report = True)
 
 
 
 if __name__ == '__main__':
-    main()
+    main(*sys.argv[1:])

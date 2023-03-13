@@ -184,11 +184,11 @@ MIXED_TRANSFORMS = {
     )
 }
 
-AVAILABLE_TRANSFORMS = list(MIXED_TRANSFORMS.keys())  # + list(FindNodes.all.keys())
+TRANSFORM_NAMES = list(MIXED_TRANSFORMS.keys())  # + list(FindNodes.all.keys())
 
 
 def transform_by_name(name):
-    assert name in AVAILABLE_TRANSFORMS, f"Transform {name} is not available"
+    assert name in TRANSFORM_NAMES, f"Transform {name} is not available"
 
     if name in MIXED_TRANSFORMS:
         return MIXED_TRANSFORMS[name]
