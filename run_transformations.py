@@ -29,6 +29,7 @@ class FileTransformer:
         self._suffix = config.suffix
 
         self._transforms = [transform_by_name(name) for name in TRANSFORM_NAMES if getattr(config, name, False)]
+        self._required_transforms = config.required_transforms
 
         assert len(self._transforms) > 0, f"You have to select at least one transform from {TRANSFORM_NAMES}"
 
@@ -63,7 +64,13 @@ class FileTransformer:
                 "exception"  : traceback.format_exc(),
                 "walltime"   : time() - start_time,
             }]
-
+        for required_transform in self._required_transforms:
+            if required_transform not in transforms[-1][1]:
+                return [{
+                    "source_file": file_name,
+                    "exception"  : f"missing required transformation '{required_transform}' in '{transforms[-1][1]}'",
+                    "walltime"   : time() - start_time,
+                }]
 
         output_files = []
         for i, (transformed, trace) in enumerate(transforms):
@@ -88,6 +95,9 @@ class FileTransformer:
                     yaml.dump(yml, w)
             
             with open(output_path + ext, "w") as o:
+                if not 'func_' in transformed:
+                    print(f'weird: {file_name}, num: {num_transforms}, trace: {trace}')
+                    o.write('weird\n')
                 o.write(transformed)
             
             output_files.append({"file_path": output_path + ext, "trace": trace})
@@ -151,6 +161,7 @@ def parse_input_files(input_files):
 def prepare_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_files", nargs = "+")
+    parser.add_argument("--required_transforms", type = str, nargs = "+")
     parser.add_argument("-o", "--output_dir", type = str, required = True)
     parser.add_argument("--num_transforms", type = int, default = -1)
     parser.add_argument("--recursion_limit", type = int, default = 5000)
