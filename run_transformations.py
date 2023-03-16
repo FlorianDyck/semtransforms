@@ -77,7 +77,7 @@ class FileTransformer:
             output_path, ext = os.path.splitext(output_path)
             output_path = (output_path.removesuffix(os.path.basename(output_path)) +
                            self._prefix + os.path.basename(output_path) + self._suffix)
-            if True or len(transforms) > 0:
+            if True or len(transforms) > 1:
                 output_path += f"-{i}"
 
             if self._generate_benchmark:
