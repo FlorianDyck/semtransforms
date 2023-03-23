@@ -13,7 +13,7 @@ from time import time
 
 from mapreduce import mapreduce
 
-from semtransforms import TRANSFORM_NAMES, transform_by_name
+from semtransforms import TRANSFORM_NAMES, transform_by_name, _TransformerFN
 
 
 # Transformer ---------------------------------------------------------------------------
@@ -159,21 +159,32 @@ def parse_input_files(input_files):
 
 def prepare_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("input_files", nargs = "+")
-    parser.add_argument("--required_transforms", type = str, nargs = "+")
-    parser.add_argument("-o", "--output_dir", type = str, required = True)
-    parser.add_argument("--num_transforms", type = int, default = -1)
-    parser.add_argument("--recursion_limit", type = int, default = 5000)
-    parser.add_argument("--prefix", type = str, default = '')
-    parser.add_argument("--suffix", type = str, default = '')
-    parser.add_argument("--header", type = str, default = '')
-    parser.add_argument("--no_dedup", action = "store_true")
+    parser.add_argument("input_files", nargs = "+",
+                        help = ".c or .i file to transform or .set file pointing to several .yml files")
+    parser.add_argument("--required_transforms", type = str, nargs = "+",
+                        help = "a required transformation not being executed will be treated as an error")
+    parser.add_argument("-o", "--output_dir", type = str, required = True,
+                        help = "file to put the transformed files into")
+    parser.add_argument("--num_transforms", type = int, default = -1,
+                        help = "the number of consecutive transformations to do on each file")
+    parser.add_argument("--recursion_limit", type = int, default = 5000,
+                        help = "limits the recursion depht while traversing the abstract syntax tree")
+    parser.add_argument("--prefix", type = str, default = '', help = "prefix for folder and file names")
+    parser.add_argument("--suffix", type = str, default = '', help = "suffix for folder and file names")
+    parser.add_argument("--header", type = str, default = '', help = "header prefixed to transformed sources files")
+    parser.add_argument("--no_dedup", action = "store_true", help = "prevents overriding of already existing files")
 
     for transform_name in TRANSFORM_NAMES:
-        parser.add_argument(f"--{transform_name}", action = "store_true")
+        help = f"transformation {transform_name}"
+        transform = transform_by_name(transform_name)
+        if isinstance(transform, _TransformerFN):
+            help += ' composed of: ' + ', '.join(transform.func.__name__ for transform, _ in transform._transformer.trans)
+        parser.add_argument(f"--{transform_name}", action = "store_true", help = help)
 
-    parser.add_argument("--parallel", action = "store_true")
-    parser.add_argument("--generate_benchmark", action = "store_true")
+    parser.add_argument("--parallel", action = "store_true",
+                        help = "makes the transformation of different files run in parallel")
+    parser.add_argument("--generate_benchmark", action = "store_true",
+                        help = "keeps the folder structure of the original and copies .yml files")
 
     return parser
 
