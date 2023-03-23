@@ -96,7 +96,12 @@ class FileTransformer:
                     yaml.dump(yml, w)
             
             with open(output_path + ext, "w") as o:
-                o.write(self._header)
+                o.write(
+                    self._header
+                        .replace('{input_file}', os.path.basename(input_path) + ext)
+                        .replace('{output_file}', os.path.basename(output_path) + ext)
+                        .replace('{trace}', trace.replace('\n', ';'))
+                )
                 o.write(transformed)
             
             output_files.append({"file_path": output_path + ext, "trace": trace})
