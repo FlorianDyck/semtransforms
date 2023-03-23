@@ -27,6 +27,7 @@ class FileTransformer:
         self._generate_benchmark = config.generate_benchmark
         self._prefix = config.prefix
         self._suffix = config.suffix
+        self._header = config.header
 
         self._transforms = [transform_by_name(name) for name in TRANSFORM_NAMES if getattr(config, name, False)]
         self._required_transforms = config.required_transforms
@@ -95,9 +96,7 @@ class FileTransformer:
                     yaml.dump(yml, w)
             
             with open(output_path + ext, "w") as o:
-                if not 'func_' in transformed:
-                    print(f'weird: {file_name}, num: {num_transforms}, trace: {trace}')
-                    o.write('weird\n')
+                o.write(self._header)
                 o.write(transformed)
             
             output_files.append({"file_path": output_path + ext, "trace": trace})
@@ -167,6 +166,7 @@ def prepare_parser():
     parser.add_argument("--recursion_limit", type = int, default = 5000)
     parser.add_argument("--prefix", type = str, default = '')
     parser.add_argument("--suffix", type = str, default = '')
+    parser.add_argument("--header", type = str, default = '')
     parser.add_argument("--no_dedup", action = "store_true")
 
     for transform_name in TRANSFORM_NAMES:
