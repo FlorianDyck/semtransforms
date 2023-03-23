@@ -27,7 +27,7 @@ class FileTransformer:
         self._generate_benchmark = config.generate_benchmark
         self._prefix = config.prefix
         self._suffix = config.suffix
-        self._header = config.header
+        self._header = config.header.replace('\\n', '\n').replace('\\r', '\r')
 
         self._transforms = [transform_by_name(name) for name in TRANSFORM_NAMES if getattr(config, name, False)]
         self._required_transforms = config.required_transforms
