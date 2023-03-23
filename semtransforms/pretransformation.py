@@ -1,29 +1,19 @@
 import re
-from typing import List
 
 
 def remove_comments(text):
+    r"""
+    Replace comments with a space.
+    \\\\ and \\* *\\ in strings are ignored by replacing strings with themselves
+    :param text: text to replace comments in
+    :return: text without comments
     """
-    removes comments from a piece of source code.
-    unchanged from original.
-
-    source:
-        https://stackoverflow.com/questions/241327/remove-c-and-c-comments-using-python
-    licenses:
-        CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/
-        CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/
-    """
-    def replacer(match):
-        s = match.group(0)
-        if s.startswith('/'):
-            return " "  # note: a space and not an empty string
-        else:
-            return s
-    pattern = re.compile(
-        r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
-        re.DOTALL | re.MULTILINE
-    )
-    return re.sub(pattern, replacer, text)
+    single_line_comment = r"//.*?$"
+    multi_line_comment = r"/\*.*?\*/"
+    char = r"'(\\.|[^\\'])*'"
+    string = r'"(\\.|[^\\"])*"'
+    return re.sub('(?s)(?m)' + '|'.join((single_line_comment, multi_line_comment, char, string)),
+                  lambda m: ' ' if m.group(0).startswith('/') else m.group(0), text)
 
 
 def regex(code: str) -> str:
