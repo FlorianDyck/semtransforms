@@ -33,7 +33,7 @@ class Transformer:
     def probability(possibility: Tuple, run: int) -> float:
         return max(0, possibility[1](run)) if callable(possibility[1]) else possibility[1]
 
-    def transform(self, ast: Node, repetitions=1):
+    def transform(self, ast: Node, repetitions=1, pretty_names=True):
         """do any number of transformations on the ast with the given probabilities"""
         trace = ""
         for i in range(repetitions):
@@ -45,7 +45,7 @@ class Transformer:
                 if not possibilities:
                     return trace[:-1] if trace else ""
                 choice = self.transform_selector(*zip(*possibilities))[0]
-                transforms = choice.all_transforms(ast)
+                transforms = choice.all_transforms(ast, pretty_names=pretty_names)
                 possibilities = list(filter(lambda p: p[0] != choice, possibilities))
 
             # Loop is run at least run once because random_number >= 0, thus choice is always initialized

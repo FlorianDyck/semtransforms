@@ -29,8 +29,10 @@ class FileTransformer:
         self._suffix = config.suffix
         self._header = config.header.replace('\\n', '\n').replace('\\r', '\r')
 
-        self._transforms = [transform_by_name(name) for name in TRANSFORM_NAMES if getattr(config, name, False)]
+        self._transforms = [transform_by_name(name, pretty_names=config.pretty_names)
+                            for name in TRANSFORM_NAMES if getattr(config, name, False)]
         self._required_transforms = config.required_transforms
+        self._pretty_names = config.pretty_names
 
         assert len(self._transforms) > 0, f"You have to select at least one transform from {TRANSFORM_NAMES}"
 
@@ -50,7 +52,7 @@ class FileTransformer:
         start_time = time()
 
         try:
-            transforms = transform(source_code, n = num_transforms)
+            transforms = transform(source_code, pretty_names = self._pretty_names, n = num_transforms)
         except pycparser.plyparser.ParseError as pe:
             print(f"\ncould not parse '{file_name}' because of {pe}. See statistics for detailed info.")
             return [{
@@ -178,6 +180,7 @@ def prepare_parser():
     parser.add_argument("--suffix", type = str, default = '', help = "suffix for folder and file names")
     parser.add_argument("--header", type = str, default = '', help = "header prefixed to transformed sources files")
     parser.add_argument("--no_dedup", action = "store_true", help = "prevents overriding of already existing files")
+    parser.add_argument("--pretty_names", action = "store_true", help = "creates pretty names which are not obfuscated")
 
     for transform_name in TRANSFORM_NAMES:
         help = f"transformation {transform_name}"

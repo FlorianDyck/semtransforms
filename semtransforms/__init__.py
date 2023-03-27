@@ -34,10 +34,10 @@ class _TransformerFN:
         self._transformer = Transformer(*transforms)
         self._numbers     = numbers
     
-    def __call__(self, source_code, n = None):
+    def __call__(self, source_code, pretty_names, n=None):
         if n is None: n = self._numbers
         if isinstance(n, int): n = (n,)
-        return transform(source_code, self._transformer, *n)
+        return transform(source_code, self._transformer, pretty_names, *n)
 
 
 def _build(*trans, number=(10,)):
@@ -187,34 +187,36 @@ MIXED_TRANSFORMS = {
 TRANSFORM_NAMES = list(MIXED_TRANSFORMS.keys())  # + list(FindNodes.all.keys())
 
 
-def transform_by_name(name):
+def transform_by_name(name, pretty_names=True):
     assert name in TRANSFORM_NAMES, f"Transform {name} is not available"
 
     if name in MIXED_TRANSFORMS:
         return MIXED_TRANSFORMS[name]
-    return lambda x: transform(x, Transformer(FindNodes.all[name]))
+    return lambda x: transform(x, Transformer(FindNodes.all[name]), pretty_names)
 
 
 def all_transformer():
     return Transformer(*FindNodes.all.values())
 
 
-def transform(program, transformer, *number):
+def transform(program, transformer, pretty_names, *number):
     if len(number) >= 1:
         splits = [number[0]] + [number[i + 1] - number[i] for i in range(len(number) - 1)]
     else:
         splits = [1]
 
     def part_fn(split):
-        return lambda ast: transformer.transform(ast, split)
+        return lambda ast: transformer.transform(ast, split, pretty_names)
 
     return support_extensions(program, lambda x: on_ast(x, *[part_fn(split) for split in splits]))
 
-def trace(program, trace, *number):
+
+def trace(program, trace, pretty_names=True, *number):
     parts = trace.split('\n')
     splits = [(0, number[0])] + [(number[i], number[i + 1]) for i in range(len(number) - 1)]
     parts = ['\n'.join(parts[start:end]) for start, end in splits]
-    return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: _trace(ast, part)) for part in parts]))
+    return support_extensions(program, lambda x: on_ast(x, *[(lambda ast: _trace(ast, part, pretty_names=pretty_names))
+                                                             for part in parts]))
 
 
 def add_empty_lists(ast: Node):
@@ -239,10 +241,10 @@ def on_ast(program, *operations):
     return results
 
 
-def _trace(ast: Node, run: str):
+def _trace(ast: Node, run: str, pretty_names=True):
     for line in run.split("\n"):
         name, index = line.split(": ")
-        FindNodes.all[name].all_transforms(ast)[int(index)]()
+        FindNodes.all[name].all_transforms(ast, pretty_names=pretty_names)[int(index)]()
     return run
 
 
@@ -251,13 +253,14 @@ def collect(results, f="/*\n{1}\n*/\n\n{0}"):
             for i, (code, _) in enumerate(results)]
 
 
-def task(name: str, program: str, *number: int, f="/*\n{1}\n*/\n\n{0}"):
+def task(name: str, program: str, pretty_names: bool = True, *number: int, f="/*\n{1}\n*/\n\n{0}"):
     if ":" in name:
-        return collect(trace(program, name.replace(';', '\n'), *number), f)
+        return collect(trace(program, name.replace(';', '\n'), pretty_names, *number), f)
     elif name in MIXED_TRANSFORMS:
-        return collect(MIXED_TRANSFORMS[name](program, number))
+        return collect(MIXED_TRANSFORMS[name](program, pretty_names, number))
     elif name in FindNodes.all:
-        return collect(transform(program, Transformer(*[FindNodes.all[n] for n in name.split(";")]), *number))
+        return collect(transform(program, Transformer(*[FindNodes.all[n] for n in name.split(";")]),
+                                 pretty_names, *number))
 
 
 def limit(task, timeout=100):

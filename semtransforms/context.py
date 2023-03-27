@@ -35,6 +35,16 @@ def next_identifier(name: str) -> str:
     return result
 
 
+def coords(ast):
+    return [ast.coord] + [coord for child in ast for coord in coords(child)]
+
+
+def lines(ast):
+    values = [c.line for c in coords(ast) if c]
+    if values:
+        return min(values), max(values)
+
+
 def is_generated_identifier(name: str, prefix : str = "", length : int = 8) -> bool:
     """Test if a given identifier is a generated one"""
     if not name.startswith(prefix): return False
@@ -87,7 +97,7 @@ def _no_decl_type(type: Node):
 
 class ContextVisitor:
     """visits the childs of a node with a valid ContextVisitor"""
-    def __init__(self, node: Node, visit_node):
+    def __init__(self, node: Node, visit_node, transformation_name, pretty_names):
         """visit_node has to be callable with:
         (visitor: ContextVisitor, current: Node, parents: typing.List[Node], index: int)"""
         self._types = {}
@@ -102,12 +112,15 @@ class ContextVisitor:
                   PtrDecl([], TypeDecl('__PRETTY_FUNCTION__', [], None, IdentifierType(['char']), [])), None, None)
         self._build_context(node)
         self.visit_node = visit_node
+        self.transformation_name = transformation_name
+        self.pretty_names = pretty_names
         # run
         self._visit(node, [])
         self._build_labels.cache_clear()
 
     def _visit(self, current: Node, parents: typing.List[Node] = [], index: int = 0):
         """visit a Node and its child while adding variable names to the past once they are declared"""
+        self.current = current
         match current:
             case Compound() | While() | DoWhile() | If() | Switch():
                 # These are a scope, a new ContextLevel has to be temporarily created
@@ -128,6 +141,7 @@ class ContextVisitor:
                     self._visit(init, parents + [current], i)
                     i += 1
 
+                self.current = current
                 self.visit_node(self, current, parents, index)
                 parents = [] + parents + [current]
                 
@@ -267,10 +281,23 @@ class ContextVisitor:
         else:
             all_keys = set([key for level in self.levels for key in getattr(level.past, type).keys()])
             all_keys |= set([key for key in getattr(self.levels[-1].future, type).keys()])
-        name = random_identifier()
-        while prefix + name in all_keys:
-            name = next_identifier(name)
-        return prefix + name
+        if self.pretty_names:
+            i = 0
+            basename = f'{prefix}{self.transformation_name}_'
+            l = lines(self.current)
+            if l:
+                basename += f'line_{l[0]}_to_{l[1]}_'
+            name = f'{basename}{i}'
+            while prefix + name in all_keys:
+                i += 1
+                name = f'{basename}{i}'
+            return name
+        else:
+            name = random_identifier()
+            while prefix + name in all_keys:
+                name = next_identifier(name)
+            print(prefix + name)
+            return prefix + name
 
     def basic_type(self, node: Node) -> typing.Optional[str]:
         """returns the type of a node only if it always is the same IdentifierType"""

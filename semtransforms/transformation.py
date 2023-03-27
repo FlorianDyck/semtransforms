@@ -183,7 +183,7 @@ class FindNodes:
         return self._all_transforms(ast, parents, context, child_index)
 
 
-    def all_transforms(self, ast: Node, parents: List[Node] = [], index: int = 0) -> List[Callable]:
+    def all_transforms(self, ast: Node, parents: List[Node] = [], index: int = 0, pretty_names=True) -> List[Callable]:
         """iterates through all childs and finds where the AST can be transformed"""
         is_root = not parents
         if is_root:
@@ -196,17 +196,17 @@ class FindNodes:
             def visit_node(visitor: ContextVisitor, current: Node, parents: typing.List[Node], index):
                 result.extend(self._all_allowed_transforms(current, parents, visitor, index))
 
-            ContextVisitor(ast, visit_node)
+            ContextVisitor(ast, visit_node, self.func.__name__, pretty_names)
         else:
             result = self._all_allowed_transforms(ast, parents, None, index)
             parents = [] + parents + [ast]
             i = 0
             for c in ast:
                 if c:
-                    result += self.all_transforms(c, parents, i)
+                    result += self.all_transforms(c, parents, i, pretty_names)
                     i += 1
             if ast.__class__ in (c_ast.Compound, c_ast.Case, c_ast.Default):
-                result += self.all_transforms(NoNode(), parents, i)
+                result += self.all_transforms(NoNode(), parents, i, pretty_names)
 
         def wrapper(func):
             func()
