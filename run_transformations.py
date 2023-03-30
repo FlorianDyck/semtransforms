@@ -178,7 +178,7 @@ def prepare_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_files", nargs = "+",
                         help = ".c or .i file to transform or .set file pointing to several .yml files")
-    parser.add_argument("--required_transforms", type = str, nargs = "+",
+    parser.add_argument("--required_transforms", type = str, default = (), nargs = "+",
                         help = "a required transformation not being executed will be treated as an error")
     parser.add_argument("-o", "--output_dir", type = str, required = True,
                         help = "file to put the transformed files into")
