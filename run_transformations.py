@@ -47,12 +47,10 @@ class FileTransformer:
         with open(file_name, 'r') as f:
             source_code = f.read()
 
-        num_transforms = None if self._num_transforms <= 0 else self._num_transforms
-
         start_time = time()
 
         try:
-            transforms = transform(source_code, pretty_names = self._pretty_names, n = num_transforms)
+            transforms = transform(source_code, pretty_names = self._pretty_names, n = self._num_transforms)
         except pycparser.plyparser.ParseError as pe:
             print(f"\ncould not parse '{file_name}' because of {pe}. See statistics for detailed info.")
             return [{
@@ -67,8 +65,10 @@ class FileTransformer:
                 "exception"  : traceback.format_exc(),
                 "walltime"   : time() - start_time,
             }]
+        trace = ';'.join(trace for code, trace in transforms)
         for required_transform in self._required_transforms:
-            if required_transform not in transforms[-1][1]:
+            if required_transform not in trace:
+                print(f'Missing {required_transform} in {trace}')
                 return [{
                     "source_file": file_name,
                     "exception"  : f"missing required transformation '{required_transform}' in '{transforms[-1][1]}'",
@@ -76,7 +76,14 @@ class FileTransformer:
                 }]
 
         output_files = []
-        for i, (transformed, trace) in enumerate(transforms):
+        transform_count = 0
+        full_trace = ''
+        for transformed, trace in transforms:
+            if not trace:
+                break
+            transform_count += trace.count('\n') + 1
+            single_line_trace = trace.replace("\n", ";")
+            full_trace = f'{full_trace};{single_line_trace}' if full_trace else single_line_trace
             output_path = os.path.join(self._output_dir, os.path.basename(file_name))
             if self._generate_benchmark:
                 output_path = os.path.join(self._output_dir,
@@ -88,7 +95,7 @@ class FileTransformer:
             output_path = (output_path.removesuffix(os.path.basename(output_path)) +
                            self._prefix + os.path.basename(output_path) + self._suffix)
             if len(transforms) > 1:
-                output_path += f"-{i}"
+                output_path += f"-{transform_count}"
 
             if self._generate_benchmark:
                 with open(input_path + '.yml', 'r') as r:
@@ -105,7 +112,7 @@ class FileTransformer:
                     self._header
                         .replace('{input_file}', os.path.basename(input_path) + ext)
                         .replace('{output_file}', os.path.basename(output_path) + ext)
-                        .replace('{trace}', trace.replace('\n', ';'))
+                        .replace('{trace}', full_trace)
                 )
                 o.write(transformed)
             
@@ -175,7 +182,7 @@ def prepare_parser():
                         help = "a required transformation not being executed will be treated as an error")
     parser.add_argument("-o", "--output_dir", type = str, required = True,
                         help = "file to put the transformed files into")
-    parser.add_argument("--num_transforms", type = int, default = -1,
+    parser.add_argument("--num_transforms", type = int, default = [None], nargs = "+",
                         help = "the number of consecutive transformations to do on each file")
     parser.add_argument("--recursion_limit", type = int, default = 5000,
                         help = "limits the recursion depht while traversing the abstract syntax tree")
