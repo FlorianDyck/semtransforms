@@ -59,6 +59,8 @@ MIXED_TRANSFORMS = {
     "re_ref": _build(re_ref),
     "loops": _build(deepen_while, for2while, break2goto),
     "methods": _build(add_compound, to_method, insert_method),
+    "controlflow": _build(deepen_while, for2while, break2goto, add_if1, if0error),
+    "indirections": _build(re_ref, to_array),
     "recursive": _build(for2while, to_recursive),
 
     # Simple transformations
