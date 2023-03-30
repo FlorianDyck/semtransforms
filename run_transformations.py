@@ -93,9 +93,12 @@ class FileTransformer:
             if self._generate_benchmark:
                 with open(input_path + '.yml', 'r') as r:
                     yml = yaml.safe_load(r)
+                original_files = yml['input_files']
                 yml['input_files'] = os.path.basename(output_path) + ext
                 with open(output_path + '.yml', 'w+') as w:
                     yaml.dump(yml, w)
+                    w.write(f"\n# original_yaml_file: {os.path.basename(input_path)}.yml"
+                            f"\n# original_input_files: {original_files}")
             
             with open(output_path + ext, "w") as o:
                 o.write(
