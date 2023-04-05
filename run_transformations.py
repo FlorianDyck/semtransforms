@@ -25,9 +25,10 @@ class FileTransformer:
         self._num_transforms = config.num_transforms
         self._recursion_limit = config.recursion_limit
         self._generate_benchmark = config.generate_benchmark
+        self._benchmark_comparison = config.benchmark_comparison
         self._prefix = config.prefix
         self._suffix = config.suffix
-        self._header = config.header.replace('\\n', '\n').replace('\\r', '\r')
+        self._header = config.header
 
         self._transforms = [transform_by_name(name, pretty_names=config.pretty_names)
                             for name in TRANSFORM_NAMES if getattr(config, name, False)]
@@ -78,23 +79,23 @@ class FileTransformer:
         output_files = []
         transform_count = 0
         full_trace = ''
-        for transformed, trace in transforms:
+        for i, (transformed, trace) in enumerate(transforms):
             if not trace:
                 break
             transform_count += trace.count('\n') + 1
             single_line_trace = trace.replace("\n", ";")
             full_trace = f'{full_trace};{single_line_trace}' if full_trace else single_line_trace
-            output_path = os.path.join(self._output_dir, os.path.basename(file_name))
-            if self._generate_benchmark:
-                output_path = os.path.join(self._output_dir,
-                                           self._prefix + os.path.basename(os.path.dirname(file_name)) + self._suffix,
-                                           os.path.basename(file_name))
+            input_path, ext = os.path.splitext(file_name)
+            basename = os.path.basename(input_path)
 
-            input_path, _ = os.path.splitext(file_name)
-            output_path, ext = os.path.splitext(output_path)
-            output_path = (output_path.removesuffix(os.path.basename(output_path)) +
-                           self._prefix + os.path.basename(output_path) + self._suffix)
-            if len(transforms) > 1:
+            path_parts = [self._output_dir]
+            if self._benchmark_comparison:
+                path_parts.append(str(i))
+            if self._generate_benchmark:
+                path_parts.append(self._prefix + os.path.basename(os.path.dirname(file_name)) + self._suffix)
+            path_parts.append(self._prefix + basename + self._suffix)
+            output_path = os.path.join(*path_parts)
+            if len(transforms) > 1 and not self._benchmark_comparison:
                 output_path += f"-{transform_count}"
 
             if self._generate_benchmark:
@@ -110,6 +111,7 @@ class FileTransformer:
             with open(output_path + ext, "w") as o:
                 o.write(
                     self._header
+                        .replace('\\n', '\n').replace('\\r', '\r')
                         .replace('{input_file}', os.path.basename(input_path) + ext)
                         .replace('{output_file}', os.path.basename(output_path) + ext)
                         .replace('{trace}', full_trace)
@@ -203,8 +205,24 @@ def prepare_parser():
                         help = "makes the transformation of different files run in parallel")
     parser.add_argument("--generate_benchmark", action = "store_true",
                         help = "keeps the folder structure of the original and copies .yml files")
+    parser.add_argument("--benchmark_comparison", action = "store_true",
+                        help = "creates a folder for each number in --num_transforms")
 
     return parser
+
+
+def copy_info_files(folder, folder_out):
+    if not os.path.exists(folder_out):
+        os.makedirs(folder_out)
+    for file in os.listdir(folder):
+        if 'license' in os.path.basename(file).lower():
+            shutil.copy(os.path.join(folder, file), os.path.join(folder_out, file))
+        if 'readme' in os.path.basename(file).lower():
+            with open(os.path.join(folder, file), 'r') as r:
+                readme = r.read()
+            with open(os.path.join(folder_out, file), 'w+') as w:
+                w.write(f'{readme}\n\ntransformed with semtransforms\n'
+                        f'https://github.com/Flo0112358/semtransforms')
 
 
 def main(*args):
@@ -228,18 +246,12 @@ def main(*args):
     if args.generate_benchmark:
         folders = {os.path.dirname(file) for file in input_files}
         for folder in folders:
-            folder_out = os.path.join(args.output_dir, args.prefix + os.path.basename(folder) + args.suffix)
-            if not os.path.exists(folder_out):
-                os.makedirs(folder_out)
-            for file in os.listdir(folder):
-                if 'license' in os.path.basename(file).lower():
-                    shutil.copy(os.path.join(folder, file), os.path.join(folder_out, file))
-                if 'readme' in os.path.basename(file).lower():
-                    with open(os.path.join(folder, file), 'r') as r:
-                        readme = r.read()
-                    with open(os.path.join(folder_out, file), 'w+') as w:
-                        w.write(f'{readme}\n\ntransformed with semtransforms\n'
-                                f'https://github.com/Flo0112358/semtransforms')
+            basename = args.prefix + os.path.basename(folder) + args.suffix
+            if args.benchmark_comparison:
+                for i in range(len(args.num_transforms)):
+                    copy_info_files(folder, os.path.join(args.output_dir, str(i), basename))
+            else:
+                copy_info_files(folder, os.path.join(args.output_dir, basename))
 
     # Run mapreduce
     mapreduce(input_files, transformer, reducer_fn = args.output_dir, parallel = args.parallel, report = True)
