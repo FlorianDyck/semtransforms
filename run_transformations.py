@@ -117,7 +117,7 @@ class FileTransformer:
                 with open(output_path + '.yml', 'w+') as w:
                     yaml.dump(yml, w)
                     w.write(f"\n# original_yaml_file: {os.path.basename(input_path)}.yml"
-                            f"\n# original_input_files: {original_files}")
+                            f"\n# original_input_files: {original_files}\n")
             
             with open(output_path + ext, "w") as o:
                 def original_header() -> str:
