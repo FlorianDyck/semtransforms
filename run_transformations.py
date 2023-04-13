@@ -120,6 +120,26 @@ class FileTransformer:
                             f"\n# original_input_files: {original_files}")
             
             with open(output_path + ext, "w") as o:
+                def original_header() -> str:
+                    for file in f'{input_path}{ext}', f'{input_path}.c':
+                        if not os.path.exists(file):
+                            continue
+                        with open(file, 'r') as r:
+                            content = r.read().splitlines()
+                        header = []
+                        while content:
+                            line_content = content[0].lstrip()
+                            if not line_content or line_content.startswith('//'):
+                                header.append(content.pop(0))
+                            elif line_content.startswith('/*'):
+                                while True:
+                                    header.append(content[0])
+                                    if '*/' in content.pop(0): break
+                            else:
+                                break
+                        if any(header):
+                            return '\n'.join(header)
+                    return ''
                 o.write(
                     self._header
                         .replace('\\n', '\n').replace('\\r', '\r')
@@ -127,6 +147,7 @@ class FileTransformer:
                         .replace('{output_file}', os.path.basename(output_path) + ext)
                         .replace('{trace}', full_trace.replace(': ', ':').replace('\n', ' '))
                         .replace('{commit_hash}', os.popen('git rev-parse --short head').read().splitlines()[0])
+                        .replace('{original_header}', original_header())
                 )
                 o.write(transformed)
             
