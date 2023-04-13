@@ -13,7 +13,7 @@ from time import time
 
 from mapreduce import mapreduce
 
-from semtransforms import TRANSFORM_NAMES, transform_by_name, _TransformerFN
+from semtransforms import TRANSFORM_NAMES, transform_by_name, _TransformerFN, MIXED_TRANSFORMS
 
 
 # Transformer ---------------------------------------------------------------------------
@@ -29,9 +29,16 @@ class FileTransformer:
         self._prefix = config.prefix
         self._suffix = config.suffix
         self._header = config.header
+        if config.header_file:
+            with open(config.header_file, 'r') as r:
+                self._header = r.read()
 
         self._transforms = [transform_by_name(name, pretty_names=config.pretty_names)
                             for name in TRANSFORM_NAMES if getattr(config, name, False)]
+        self._trace = config.trace
+        if config.trace:
+            self._transforms = [MIXED_TRANSFORMS['random']]
+
         self._required_transforms = config.required_transforms
         self._pretty_names = config.pretty_names
 
@@ -51,7 +58,12 @@ class FileTransformer:
         start_time = time()
 
         try:
-            transforms = transform(source_code, pretty_names = self._pretty_names, n = self._num_transforms)
+            if self._trace:
+                # this import does not work if it is at the start of the file.
+                from semtransforms import trace
+                transforms = trace(source_code, '\n'.join(self._trace), self._pretty_names, *self._num_transforms)
+            else:
+                transforms = transform(source_code, pretty_names = self._pretty_names, n = self._num_transforms)
         except pycparser.plyparser.ParseError as pe:
             print(f"\ncould not parse '{file_name}' because of {pe}. See statistics for detailed info.")
             return [{
@@ -83,8 +95,7 @@ class FileTransformer:
             if not trace:
                 break
             transform_count += trace.count('\n') + 1
-            single_line_trace = trace.replace("\n", ";")
-            full_trace = f'{full_trace};{single_line_trace}' if full_trace else single_line_trace
+            full_trace = f'{full_trace}\n{trace}' if full_trace else trace
             input_path, ext = os.path.splitext(file_name)
             basename = os.path.basename(input_path)
 
@@ -114,7 +125,8 @@ class FileTransformer:
                         .replace('\\n', '\n').replace('\\r', '\r')
                         .replace('{input_file}', os.path.basename(input_path) + ext)
                         .replace('{output_file}', os.path.basename(output_path) + ext)
-                        .replace('{trace}', full_trace)
+                        .replace('{trace}', full_trace.replace(': ', ':').replace('\n', ' '))
+                        .replace('{commit_hash}', os.popen('git rev-parse --short head').read().splitlines()[0])
                 )
                 o.write(transformed)
             
@@ -186,11 +198,14 @@ def prepare_parser():
                         help = "file to put the transformed files into")
     parser.add_argument("--num_transforms", type = int, default = [None], nargs = "+",
                         help = "the number of consecutive transformations to do on each file")
+    parser.add_argument("--trace", type = str, default = None, nargs = "+",
+                        help = "a trace to reproduce a sequence of transformations")
     parser.add_argument("--recursion_limit", type = int, default = 5000,
                         help = "limits the recursion depht while traversing the abstract syntax tree")
     parser.add_argument("--prefix", type = str, default = '', help = "prefix for folder and file names")
     parser.add_argument("--suffix", type = str, default = '', help = "suffix for folder and file names")
     parser.add_argument("--header", type = str, default = '', help = "header prefixed to transformed sources files")
+    parser.add_argument("--header_file", type = str, default = '', help = "path to header text")
     parser.add_argument("--no_dedup", action = "store_true", help = "prevents overriding of already existing files")
     parser.add_argument("--pretty_names", action = "store_true", help = "creates pretty names which are not obfuscated")
 
@@ -235,7 +250,7 @@ def main(*args):
     if args.no_dedup:
         input_files = dedup_input_files(args, input_files)
 
-    # Gurantees that files of similar complexity are batched together
+    # Guarantees that files of similar complexity are batched together
     input_files = sorted(input_files, key = lambda path: os.stat(path).st_size)
 
     print(f"Found {len(input_files)} files...\n"

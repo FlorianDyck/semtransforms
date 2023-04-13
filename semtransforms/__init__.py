@@ -245,8 +245,8 @@ def on_ast(program, *operations):
 
 def _trace(ast: Node, run: str, pretty_names=True):
     for line in run.split("\n"):
-        name, index = line.split(": ")
-        FindNodes.all[name].all_transforms(ast, pretty_names=pretty_names)[int(index)]()
+        name, index = line.split(":")
+        FindNodes.all[name.strip()].all_transforms(ast, pretty_names=pretty_names)[int(index.strip())]()
     return run
 
 
