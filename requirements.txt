@@ -1,5 +1,8 @@
-git+https://github.com/cedricrupb/pycparser.git@master
+git+https://github.com/FlorianDyck/pycparser.git@master
 pathos>=0.3.0
 tqdm>=4.64.1
 PyYAML>=6.0
 
+
+matplotlib~=3.7.1
+networkx~=3.1
