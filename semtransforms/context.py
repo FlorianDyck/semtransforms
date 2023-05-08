@@ -290,7 +290,7 @@ class ContextVisitor:
             if l:
                 basename += f'line_{l[0]}_to_{l[1]}_'
             name = f'{basename}{i}'
-            while prefix + name in all_keys:
+            while name in all_keys:
                 i += 1
                 name = f'{basename}{i}'
             return name
