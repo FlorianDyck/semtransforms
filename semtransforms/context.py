@@ -281,6 +281,8 @@ class ContextVisitor:
         else:
             all_keys = set([key for level in self.levels for key in getattr(level.past, type).keys()])
             all_keys |= set([key for key in getattr(self.levels[-1].future, type).keys()])
+            if type == 'default':
+                all_keys |= set([key for key in self.func_defs.keys()])
         if self.pretty_names:
             i = 0
             basename = f'{prefix}{self.transformation_name}_'
