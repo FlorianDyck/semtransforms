@@ -178,7 +178,7 @@ class ContextVisitor:
                 del self.levels[-1].future.default[name]
             case _:
                 # default: visit node and childs
-                if isinstance(current, Decl) and isinstance(current.type, FuncDecl):
+                if isinstance(current, Decl) and isinstance(current.type, FuncDecl) and current.name not in self.func_defs:
                     self.func_defs[current.name] = current
 
                 self.visit_node(self, current, parents, index)
