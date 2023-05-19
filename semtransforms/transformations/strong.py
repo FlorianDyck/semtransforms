@@ -233,7 +233,7 @@ def insert_method(finder: FindStatements, parents: List[Node], stmts: Content, c
             param_names = {p.name for p in params}
             temp_names = []
             while len(temp_names) < len(params):
-                temp_names.append(context.free_name(prefix = "param_"))
+                temp_names.append(context.free_name(prefix = "param_", used_names=temp_names))
 
             def transform():
                 if params:

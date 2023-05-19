@@ -274,7 +274,7 @@ class ContextVisitor:
             case _:
                 return node
 
-    def free_name(self, type="default", prefix = ""):
+    def free_name(self, type="default", prefix = "", used_names=None):
         """creates a free name which can be inserted into a program"""
         if type == "label":
             all_keys = self.labels
@@ -283,6 +283,8 @@ class ContextVisitor:
             all_keys |= set([key for key in getattr(self.levels[-1].future, type).keys()])
             if type == 'default':
                 all_keys |= set([key for key in self.func_defs.keys()])
+        if used_names:
+            all_keys |= set(used_names)
         if self.pretty_names:
             i = 0
             basename = f'{prefix}{self.transformation_name}_'
