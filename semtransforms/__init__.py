@@ -68,6 +68,14 @@ MIXED_TRANSFORMS = {
     "to_methods": _build(to_method),
     "deepen_while": _build(deepen_while, for2while),
 
+    # Stresstest with all potentially bad transformations: controlflow + indirections + methods + recursive
+    "stresstest": _build(
+        deepen_while, for2while, break2goto, add_if1, if0error,  # controlflow
+        re_ref, to_array,                                        # indirections
+        add_compound, to_method, insert_method,                  # methods
+        for2while, to_recursive                                  # recursive
+     ),
+
     # SPIN configs
     "spin_config": _build(
 
