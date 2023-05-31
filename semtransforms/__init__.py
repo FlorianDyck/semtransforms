@@ -75,6 +75,11 @@ MIXED_TRANSFORMS = {
         add_compound, to_method, insert_method,                  # methods
         for2while, to_recursive                                  # recursive
      ),
+    "stresstest_no_recursion": _build(
+        deepen_while, for2while, break2goto, add_if1, if0error,  # controlflow
+        re_ref, to_array,                                        # indirections
+        add_compound, to_method, insert_method                   # methods
+     ),
 
     # SPIN configs
     "spin_config": _build(
