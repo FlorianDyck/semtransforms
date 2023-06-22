@@ -42,6 +42,11 @@ class FileTransformer:
         self._required_transforms = config.required_transforms
         self._pretty_names = config.pretty_names
 
+        try:
+            self.git_hash = os.popen('git rev-parse --short head').read().splitlines()[0]
+        except IndexError:
+            self.git_hash = 'unknown'
+
         assert len(self._transforms) > 0, f"You have to select at least one transform from {TRANSFORM_NAMES}"
 
     def __call__(self, file_name):
@@ -140,17 +145,13 @@ class FileTransformer:
                         if any(header):
                             return '\n'.join(header)
                     return ''
-                try:
-                    git_hash = os.popen('git rev-parse --short head').read().splitlines()[0]
-                except IndexError:
-                    git_hash = 'unknown'
                 o.write(
                     self._header
                         .replace('\\n', '\n').replace('\\r', '\r')
                         .replace('{input_file}', os.path.basename(input_path) + ext)
                         .replace('{output_file}', os.path.basename(output_path) + ext)
                         .replace('{trace}', full_trace.replace(': ', ':').replace('\n', ' '))
-                        .replace('{commit_hash}', git_hash)
+                        .replace('{commit_hash}', self.git_hash)
                         .replace('{original_header}', original_header())
                 )
                 o.write(transformed)
