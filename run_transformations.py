@@ -140,13 +140,17 @@ class FileTransformer:
                         if any(header):
                             return '\n'.join(header)
                     return ''
+                try:
+                    git_hash = os.popen('git rev-parse --short head').read().splitlines()[0]
+                except IndexError:
+                    git_hash = 'unknown'
                 o.write(
                     self._header
                         .replace('\\n', '\n').replace('\\r', '\r')
                         .replace('{input_file}', os.path.basename(input_path) + ext)
                         .replace('{output_file}', os.path.basename(output_path) + ext)
                         .replace('{trace}', full_trace.replace(': ', ':').replace('\n', ' '))
-                        .replace('{commit_hash}', os.popen('git rev-parse --short head').read().splitlines()[0])
+                        .replace('{commit_hash}', git_hash)
                         .replace('{original_header}', original_header())
                 )
                 o.write(transformed)
